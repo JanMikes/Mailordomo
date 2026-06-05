@@ -40,6 +40,7 @@ import {
 } from './entities';
 import { DigestMetadataSchema } from './digest';
 import { TodayReadModelSchema } from './today';
+import { ProjectsBoardSchema } from './projects-board';
 import { AppSettingsSchema } from './settings';
 import {
   EmailAddressSchema,
@@ -342,6 +343,24 @@ export type TodayResponse = z.infer<typeof TodayResponseSchema>;
 /** `GET`/`PUT /api/settings` response — the full local {@link AppSettingsSchema}. */
 export const SettingsResponseSchema = AppSettingsSchema;
 export type SettingsResponse = z.infer<typeof SettingsResponseSchema>;
+
+/**
+ * `GET /api/projects-board` response — the assembled projects board (`projects-board.ts`). A LOCAL
+ * hop (backend → frontend); strict + body-free by construction (subject/snippet/sender + state
+ * metadata only — D32).
+ */
+export const ProjectsBoardResponseSchema = ProjectsBoardSchema;
+export type ProjectsBoardResponse = z.infer<typeof ProjectsBoardResponseSchema>;
+
+/**
+ * `GET /api/project` response — the configured project's identity (D32). It is {@link AuthedProject}
+ * shaped, but `name` is NULLABLE here: when the metadata service can't be reached to resolve it via
+ * `pair()`, the backend still answers with the known id and a `null` name rather than failing.
+ */
+export const ProjectResponseSchema = AuthedProjectSchema.extend({
+  name: z.string().nullable(),
+});
+export type ProjectResponse = z.infer<typeof ProjectResponseSchema>;
 
 // `PUT /api/settings` request: surfaced here alongside the response for symmetry. It is the SAME
 // binding declared in `settings.ts` (a re-export, not a new declaration), so the barrel re-exporting

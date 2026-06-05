@@ -53,6 +53,14 @@ describe('createFileSettingsStore', () => {
     expect(() => store.write({ waitingStaleDays: 0 })).toThrow();
   });
 
+  it('round-trips the D32 defaultView (defaults to today; persists three-pane)', () => {
+    const store = createFileSettingsStore(file);
+    expect(store.read().defaultView).toBe('today'); // shipped default
+    expect(store.write({ defaultView: 'three-pane' }).defaultView).toBe('three-pane');
+    expect(createFileSettingsStore(file).read().defaultView).toBe('three-pane'); // survives a fresh store
+    expect(() => store.write({ defaultView: 'kanban' as never })).toThrow(); // invalid enum rejected
+  });
+
   it('resolveSettingsFilePath honors $MAILORDOMO_CONFIG_DIR, else defaults to ~/.mailordomo', () => {
     expect(resolveSettingsFilePath({ MAILORDOMO_CONFIG_DIR: '/tmp/cfg' })).toBe(
       join('/tmp/cfg', SETTINGS_FILE_NAME),

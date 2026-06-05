@@ -127,6 +127,8 @@ export function buildThreadDetail(input: ThreadDetailInput): ThreadDetail {
 
   return {
     threadId: input.threadId,
+    // Resolved best-effort by the GET /api/threads/:id endpoint (D32); the pure builder has no resolver.
+    projectName: null,
     subject: thread?.subject ?? newest?.subject ?? null,
     sender: thread?.sender ?? (newest ? nonEmptyOrNull(newest.sender) : null),
     snippet: thread?.snippet ?? (newest ? boundedSnippet(newest.snippet) : null),

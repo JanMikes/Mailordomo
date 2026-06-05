@@ -9,6 +9,7 @@
  *  - `entities`   — the metadata-service entities from PROJECT.md §5 (the stored shapes).
  *  - `digest`     — morning-digest read models (subject/snippet/sender + attributed transitions).
  *  - `today`      — the LOCAL Today command-center read model (metrics + counts + do-next cards).
+ *  - `projects-board` — the LOCAL all-projects/per-project board (threads grouped by task state).
  *  - `thread-detail` — the LOCAL split-work-surface read model (body-free thread + pinned summary).
  *  - `settings`   — the LOCAL app settings (stale thresholds, lock timeout, color scheme).
  *  - `api`        — request/response contracts for the metadata service (ALL strict; the privacy
@@ -27,6 +28,7 @@ export * from './states';
 export * from './entities';
 export * from './digest';
 export * from './today';
+export * from './projects-board';
 export * from './thread-detail';
 export * from './settings';
 export * from './api';

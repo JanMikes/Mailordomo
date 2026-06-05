@@ -39,6 +39,7 @@ function card(threadId: string, subject: string): DoNextCard {
     snippet: `snippet ${threadId}`,
     sender: `Petr <petr+${threadId}@acme.com>`,
     projectId: 'proj',
+    projectName: 'Proj',
     state: 'needs-reply',
     importance: 'normal',
     deadline: null,

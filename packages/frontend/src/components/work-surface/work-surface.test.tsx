@@ -21,6 +21,7 @@ const SETTINGS = {
 
 const DETAIL = {
   threadId: 't1',
+  projectName: null,
   subject: 'Re: invoice',
   sender: 'Petr Novák <petr@acme.com>',
   snippet: 'about the invoice',

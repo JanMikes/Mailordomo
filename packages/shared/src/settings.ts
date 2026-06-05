@@ -16,6 +16,16 @@ export const ColorSchemeSchema = z.enum(COLOR_SCHEMES);
 export type ColorScheme = z.infer<typeof ColorSchemeSchema>;
 
 /**
+ * The persisted landing surface (PROJECT.md §11; PLAN.md D32). `today` is the opinionated command
+ * center; `three-pane` is the classic fallback (left list | thread list | reading pane) so the user
+ * is never trapped in the opinionated view. Local config, never localStorage-as-truth (like
+ * `colorScheme`).
+ */
+export const DEFAULT_VIEWS = ['today', 'three-pane'] as const;
+export const DefaultViewSchema = z.enum(DEFAULT_VIEWS);
+export type DefaultView = z.infer<typeof DefaultViewSchema>;
+
+/**
  * The full local settings object. All numeric knobs are positive integers (a zero/negative threshold
  * is nonsensical and would break the engines). Strict — an unknown key is rejected.
  */
@@ -27,6 +37,8 @@ export const AppSettingsSchema = z.strictObject({
   /** Lock timeout in minutes; sent to the server as `ttl_seconds = minutes * 60`. Default 30. */
   lockTimeoutMinutes: z.number().int().positive(),
   colorScheme: ColorSchemeSchema,
+  /** Persisted landing surface (D32): the opinionated `today` view or the classic `three-pane` fallback. */
+  defaultView: DefaultViewSchema,
 });
 export type AppSettings = z.infer<typeof AppSettingsSchema>;
 
@@ -40,6 +52,7 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   needsReplyStaleDays: 2,
   lockTimeoutMinutes: 30,
   colorScheme: 'system',
+  defaultView: 'today',
 };
 
 /**

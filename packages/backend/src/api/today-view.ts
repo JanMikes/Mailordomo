@@ -190,6 +190,8 @@ export function assembleTodayView(input: TodayViewInput, nowIso: string): TodayR
       snippet: thread.snippet,
       sender: thread.sender,
       projectId: thread.project_id,
+      // Resolved best-effort by the /api/today endpoint (D32); the pure assembler has no resolver.
+      projectName: null,
       state: task.state,
       importance: task.importance,
       deadline: task.deadline,

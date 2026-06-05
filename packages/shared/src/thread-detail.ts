@@ -60,6 +60,8 @@ export type ThreadMessageMeta = z.infer<typeof ThreadMessageMetaSchema>;
  */
 export const ThreadDetailSchema = z.strictObject({
   threadId: IdSchema,
+  /** Resolved project display name (D32); null when the metadata service couldn't be reached. */
+  projectName: z.string().nullable(),
   subject: z.string().nullable(),
   sender: SenderSchema.nullable(),
   snippet: SnippetSchema.nullable(),

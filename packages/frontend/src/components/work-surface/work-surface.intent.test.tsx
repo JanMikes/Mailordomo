@@ -25,6 +25,7 @@ const SETTINGS = {
 function detail(overrides: Record<string, unknown> = {}) {
   return {
     threadId: 't1',
+    projectName: null,
     subject: 'Re: invoice',
     sender: 'Petr Novák <petr@acme.com>',
     snippet: 'about the invoice',

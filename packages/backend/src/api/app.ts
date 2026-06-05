@@ -31,7 +31,14 @@
  *    and `…/draft` GETs are localhost-only and never reach the metadata server.
  */
 import { Hono } from 'hono';
-import type { Lock, Thread, WsMessage } from '@mailordomo/shared';
+import type {
+  DoNextCard,
+  Lock,
+  ProjectResponse,
+  ProjectsBoard,
+  Thread,
+  WsMessage,
+} from '@mailordomo/shared';
 import {
   AUTOMATED_ACTOR,
   IsoDateTimeSchema,
@@ -62,6 +69,8 @@ import { checkCache, checkClaude, checkMetadata } from './wiring';
 import { listCachedThreads } from './threads-view';
 import type { ThreadListItem } from './threads-view';
 import { assembleTodayView } from './today-view';
+import { assembleProjectsBoard } from './projects-board-view';
+import { createProjectNameResolver } from './project-name';
 
 /** Actor recorded on inline task transitions when none is configured. Phase 8's wizard sets the real one. */
 export const DEFAULT_LOCAL_ACTOR = 'me';
@@ -157,6 +166,13 @@ export function createBackendApi(deps: BackendApiDeps): Hono {
   const metadataCheck = deps.checkMetadata ?? (() => checkMetadata(metadata));
   const claudeCheck = deps.checkClaude ?? (() => checkClaude());
 
+  /**
+   * The cached project-name resolver (D32): `pair()` once → memoized {@link AuthedProject}; degrades
+   * to a null name when metadata is unreachable, never throwing. Feeds `projectName` on the Today
+   * cards, the projects board, thread detail, and `GET /api/project`.
+   */
+  const projectNames = createProjectNameResolver(metadata);
+
   /** In-memory pinned-summary memo, keyed by thread; regenerated only when the message count changes. */
   const summaryMemo = new Map<string, { count: number; summary: string }>();
 
@@ -193,11 +209,12 @@ export function createBackendApi(deps: BackendApiDeps): Hono {
 
   /** The Today command center (concurrent metadata fetch; degrades to empty slices on failure). */
   app.get('/api/today', async (c) => {
-    const [tasks, threads, promises, draftMeta] = await Promise.all([
+    const [tasks, threads, promises, draftMeta, projectName] = await Promise.all([
       metadata.listTasks().catch(emptyOnError('tasks')),
       metadata.listThreads().catch(emptyOnError('threads')),
       metadata.listPromises().catch(emptyOnError('promises')),
       metadata.listDraftMeta().catch(emptyOnError('drafts')),
+      projectNames.resolveName(), // best-effort; null when metadata is unreachable (never throws)
     ]);
     const model = assembleTodayView(
       {
@@ -210,7 +227,46 @@ export function createBackendApi(deps: BackendApiDeps): Hono {
       },
       new Date().toISOString(),
     );
-    return c.json(model, 200);
+    // Enrich each (body-free) do-next card with the resolved project name (D32 — closes the 7a
+    // deferral where cards showed the raw id). Null when unresolved.
+    const doNext: DoNextCard[] = model.doNext.map((card) => ({ ...card, projectName }));
+    return c.json({ ...model, doNext }, 200);
+  });
+
+  /**
+   * The projects board (D32) — every thread grouped by task state, for the all-projects/per-project
+   * views + the 3-pane fallback's left list. Single project in v1. Body-free; degrades to empty slices
+   * on a metadata failure (a never-trap escape hatch must still render its frame). Reuses the same
+   * metadata reads as `/api/today`, then calls the PURE assembler.
+   */
+  app.get('/api/projects-board', async (c) => {
+    const [tasks, threads, promises, draftMeta, projectName] = await Promise.all([
+      metadata.listTasks().catch(emptyOnError('tasks')),
+      metadata.listThreads().catch(emptyOnError('threads')),
+      metadata.listPromises().catch(emptyOnError('promises')),
+      metadata.listDraftMeta().catch(emptyOnError('drafts')),
+      projectNames.resolveName(),
+    ]);
+    const board: ProjectsBoard = assembleProjectsBoard(
+      {
+        projects: [{ projectId: metadata.getProjectId(), projectName }],
+        tasks,
+        threads,
+        promises,
+        draftMeta,
+      },
+      new Date().toISOString(),
+    );
+    return c.json(board, 200);
+  });
+
+  /** The configured project's identity (D32) — id + resolved name (null when metadata is unreachable). */
+  app.get('/api/project', async (c) => {
+    const payload: ProjectResponse = {
+      id: projectNames.projectId(),
+      name: await projectNames.resolveName(),
+    };
+    return c.json(payload, 200);
   });
 
   app.get('/api/settings', (c) => c.json(settingsStore.read(), 200));
@@ -287,6 +343,7 @@ export function createBackendApi(deps: BackendApiDeps): Hono {
     const locks = await metadata.listLocks().catch(() => [] as Lock[]);
     const lock = locks.find((l) => l.thread_id === threadId) ?? null;
     const pinnedSummary = await maybeSummary(threadId, rows, thread?.subject ?? undefined);
+    const projectName = await projectNames.resolveName(); // best-effort; null when unresolved (D32)
     const detail = buildThreadDetail({
       threadId,
       thread,
@@ -295,7 +352,7 @@ export function createBackendApi(deps: BackendApiDeps): Hono {
       repoFreshness: null, // repo pointers wired in Phase 8 — structural placeholder
       lock,
     });
-    return c.json(detail, 200);
+    return c.json({ ...detail, projectName }, 200);
   });
 
   /**

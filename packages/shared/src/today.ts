@@ -64,6 +64,8 @@ export const DoNextCardSchema = z.strictObject({
   snippet: SnippetSchema,
   sender: SenderSchema,
   projectId: IdSchema,
+  /** Resolved project display name (D32); null when the metadata service couldn't be reached. */
+  projectName: z.string().nullable(),
   state: TaskStateSchema,
   importance: ImportanceSchema,
   deadline: IsoDateTimeSchema.nullable(),
