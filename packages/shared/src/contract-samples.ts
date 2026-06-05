@@ -61,7 +61,10 @@ export interface ContractCase {
   readonly allowsBody: boolean;
   /** True only for the schemas where a `content` field is a SANCTIONED exception (ToneFile). */
   readonly allowsContent: boolean;
-  /** True for the stored metadata-service entities (PROJECT.md §5), false for API request DTOs. */
+  /**
+   * True for the stored metadata-service entities (PROJECT.md §5). False for API request DTOs and
+   * for `LocalRepoConfig`, which is machine-local config that is NEVER sent to the server.
+   */
   readonly isEntity: boolean;
 }
 
@@ -353,7 +356,8 @@ export const STRICT_CONTRACTS: ContractCase[] = [
     valid: localRepoConfigValid,
     allowsBody: false,
     allowsContent: false,
-    isEntity: true,
+    // Machine-local config, never sent to the server — not a §5 metadata-service entity.
+    isEntity: false,
   },
   {
     name: 'DraftMetaSchema',

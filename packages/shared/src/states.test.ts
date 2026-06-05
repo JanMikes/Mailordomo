@@ -62,6 +62,20 @@ describe('the two §6 AUTO transitions are mode "auto"', () => {
   });
 });
 
+describe('ambiguous conclusions are proposed, not auto (§6: "propose ambiguous transitions")', () => {
+  it('waiting → done is propose (never silently auto-close a waiting thread)', () => {
+    expect(transitionMode('waiting', 'done')).toBe('propose');
+  });
+
+  it('follow-up → done is propose', () => {
+    expect(transitionMode('follow-up', 'done')).toBe('propose');
+  });
+
+  it('done → needs-reply (a reopen by a new inbound message) is propose', () => {
+    expect(transitionMode('done', 'needs-reply')).toBe('propose');
+  });
+});
+
 describe('clearly-forbidden edges are rejected', () => {
   it('forbids done → waiting directly (done only reopens to needs-reply)', () => {
     expect(isAllowedTransition('done', 'waiting')).toBe(false);

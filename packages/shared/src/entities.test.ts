@@ -32,7 +32,7 @@ describe('schema round-trips (every entity + request DTO)', () => {
     expect(parsed).toEqual(dto.valid);
   });
 
-  it('covers all 12 metadata-service entities from PROJECT.md §5', () => {
+  it('covers all 11 metadata-service entities from PROJECT.md §5', () => {
     const entityNames = STRICT_CONTRACTS.filter((c) => c.isEntity).map((c) => c.name);
     expect(entityNames).toEqual([
       'ProjectSchema',
@@ -42,12 +42,16 @@ describe('schema round-trips (every entity + request DTO)', () => {
       'PromiseSchema',
       'NoteSchema',
       'RepoPointerSchema',
-      'LocalRepoConfigSchema',
       'DraftMetaSchema',
       'LockSchema',
       'ToneFileSchema',
       'LearningEntrySchema',
     ]);
+  });
+
+  it('classifies LocalRepoConfig as machine-local, not a §5 server entity', () => {
+    const local = STRICT_CONTRACTS.find((c) => c.name === 'LocalRepoConfigSchema');
+    expect(local?.isEntity).toBe(false);
   });
 });
 

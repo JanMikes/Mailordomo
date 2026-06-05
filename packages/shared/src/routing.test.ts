@@ -56,8 +56,8 @@ describe('MODEL_RANK orders the aliases haiku < sonnet < opus', () => {
 });
 
 describe('Golden rule #6 — never route outgoing-text below Opus', () => {
-  it('treats draft and nudge as the outgoing-text kinds', () => {
-    expect([...OUTGOING_TEXT_TASK_KINDS].sort()).toEqual(['draft', 'nudge']);
+  it('treats draft, nudge, and repo-answer as the outgoing-text kinds (Golden rule #6)', () => {
+    expect([...OUTGOING_TEXT_TASK_KINDS].sort()).toEqual(['draft', 'nudge', 'repo-answer']);
   });
 
   it('routes every outgoing-text kind to opus (the top rank)', () => {
@@ -79,5 +79,12 @@ describe('Golden rule #6 — never route outgoing-text below Opus', () => {
 
   it('throws when a tampered map routes nudge below opus', () => {
     expect(() => assertOutgoingTextRouting({ ...MODEL_ROUTING, nudge: 'haiku' })).toThrow();
+  });
+
+  it('throws when a tampered map routes repo-answer below opus', () => {
+    expect(() =>
+      assertOutgoingTextRouting({ ...MODEL_ROUTING, 'repo-answer': 'sonnet' }),
+    ).toThrow();
+    expect(() => assertOutgoingTextRouting({ ...MODEL_ROUTING, 'repo-answer': 'haiku' })).toThrow();
   });
 });

@@ -40,12 +40,13 @@ export const MODEL_ROUTING = {
 } as const satisfies Record<TaskKind, ModelAlias>;
 
 /**
- * Task kinds whose output becomes text a human may send or publish under their own name. Golden
- * rule #6 forbids routing any of these below Opus. `draft` is a reply draft; `nudge` is the one
- * sanctioned auto-draft for a lapsed inbound promise. (`repo-answer` is also Opus per §4, but it
- * is an answer to the user, not outgoing email, so it is not in this set.)
+ * Task kinds whose output is model-GENERATED TEXT a human consumes, sends, or publishes — Golden
+ * rule #6's "outgoing-text generation," which must never route below Opus. `draft` is a reply
+ * draft; `nudge` is the one sanctioned auto-draft for a lapsed inbound promise; `repo-answer` is a
+ * repo-aware technical answer. §4 and Golden rule #6 name "drafts & repo-aware code answers"
+ * together as the Opus tier, so all three are guarded here (not just the ones that become email).
  */
-export const OUTGOING_TEXT_TASK_KINDS = ['draft', 'nudge'] as const;
+export const OUTGOING_TEXT_TASK_KINDS = ['draft', 'nudge', 'repo-answer'] as const;
 export type OutgoingTextTaskKind = (typeof OUTGOING_TEXT_TASK_KINDS)[number];
 
 /**
@@ -57,6 +58,7 @@ export type OutgoingTextTaskKind = (typeof OUTGOING_TEXT_TASK_KINDS)[number];
 export const OUTGOING_TEXT_MODELS: Record<OutgoingTextTaskKind, 'opus'> = {
   draft: MODEL_ROUTING.draft,
   nudge: MODEL_ROUTING.nudge,
+  'repo-answer': MODEL_ROUTING['repo-answer'],
 };
 
 /** Resolve the model alias for a task kind. */

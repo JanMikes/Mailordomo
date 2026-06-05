@@ -52,6 +52,13 @@ export const FORBIDDEN_SERVER_PAYLOAD_KEYS = [
   'attachments',
   'attachmentContent',
   'attachment_content',
+  // Refine-chat transcripts are local-only per PROJECT.md §5 — never a server payload.
+  'transcript',
+  'transcripts',
+  'refineChat',
+  'refine_chat',
+  'refineChatTranscript',
+  'refine_chat_transcript',
 ] as const;
 
 export type ForbiddenServerPayloadKey = (typeof FORBIDDEN_SERVER_PAYLOAD_KEYS)[number];
