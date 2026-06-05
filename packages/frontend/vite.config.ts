@@ -1,11 +1,23 @@
+import { fileURLToPath, URL } from 'node:url';
 import react from '@vitejs/plugin-react';
+import tailwindcss from '@tailwindcss/vite';
 import { defineConfig } from 'vite';
 
 // Localhost SPA (no SSR). Bound to loopback; the backend serves the API separately on 4317.
-// `/api/*` is proxied to the backend (PLAN.md §7 Phase 4.5) so the frontend makes same-origin
-// fetches in dev — no CORS, and the backend stays on 127.0.0.1 only (PLAN.md open Q #28).
+//
+// Tailwind v4 is wired via the official `@tailwindcss/vite` plugin (the v4 path on Vite 8 — NOT the
+// v3 PostCSS setup). `@` aliases the package `src/` (the shadcn convention, so `@/components/ui/...`
+// and `@/lib/...` resolve here and for any future `npx shadcn add`).
+//
+// `/api/*` (REST + the Today WS, `ws:true`) is proxied to the backend (PLAN.md §7 Phase 4.5/7a) so
+// the frontend makes same-origin requests in dev — no CORS, backend stays on 127.0.0.1 only.
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), tailwindcss()],
+  resolve: {
+    alias: {
+      '@': fileURLToPath(new URL('./src', import.meta.url)),
+    },
+  },
   server: {
     host: '127.0.0.1',
     port: 4318,
@@ -13,7 +25,6 @@ export default defineConfig({
       '/api': {
         target: 'http://127.0.0.1:4317',
         changeOrigin: true,
-        // Proxy WebSocket upgrades too (the Today live-update socket at /api/ws — Phase 7a).
         ws: true,
       },
     },

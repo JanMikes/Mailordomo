@@ -1,0 +1,127 @@
+/*
+ * Tailwind v4 entrypoint + the shadcn/ui design tokens (PROJECT.md §11 — light/dark, native-feeling).
+ *
+ * Wiring (Tailwind v4 CSS-first, NOT the v3 PostCSS path — confirmed against the current Tailwind +
+ * shadcn docs): `@import "tailwindcss"` pulls the framework; `@plugin "tailwindcss-animate"` loads the
+ * Radix enter/exit utilities used by Tooltip/Popover; `@custom-variant dark` makes `dark:` follow a
+ * `.dark` class on <html> (toggled by useColorScheme) instead of the OS media query, so the theme is
+ * driven by AppSettings.colorScheme (server-of-truth-free local config), never localStorage.
+ *
+ * Color system (deliberately restrained): the neutral shadcn scale carries the whole UI; the only
+ * semantic hues are the THREE 3-way promise directions (PROJECT.md §7) — green = deliver,
+ * amber = owe, blue = chase — exposed as `--color-promise-*` tokens with full light/dark parity and
+ * reserved for the promise metrics + direction dots. Nothing else is colored.
+ */
+@import 'tailwindcss';
+@plugin 'tailwindcss-animate';
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  /* The three 3-way promise directions (PROJECT.md §7) — the only semantic hues. */
+  --color-promise-deliver: var(--promise-deliver);
+  --color-promise-owe: var(--promise-owe);
+  --color-promise-chase: var(--promise-chase);
+
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+}
+
+:root {
+  --radius: 0.625rem;
+
+  --background: oklch(1 0 0);
+  --foreground: oklch(0.145 0 0);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.145 0 0);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.145 0 0);
+  --primary: oklch(0.205 0 0);
+  --primary-foreground: oklch(0.985 0 0);
+  --secondary: oklch(0.97 0 0);
+  --secondary-foreground: oklch(0.205 0 0);
+  --muted: oklch(0.97 0 0);
+  --muted-foreground: oklch(0.556 0 0);
+  --accent: oklch(0.97 0 0);
+  --accent-foreground: oklch(0.205 0 0);
+  --destructive: oklch(0.577 0.245 27.325);
+  --destructive-foreground: oklch(0.985 0 0);
+  --border: oklch(0.922 0 0);
+  --input: oklch(0.922 0 0);
+  --ring: oklch(0.708 0 0);
+
+  /* Promise directions — light. Mid-chroma so they read as dots and as text on a tinted chip. */
+  --promise-deliver: oklch(0.58 0.13 152);
+  --promise-owe: oklch(0.64 0.14 75);
+  --promise-chase: oklch(0.55 0.17 255);
+}
+
+.dark {
+  --background: oklch(0.145 0 0);
+  --foreground: oklch(0.985 0 0);
+  --card: oklch(0.205 0 0);
+  --card-foreground: oklch(0.985 0 0);
+  --popover: oklch(0.205 0 0);
+  --popover-foreground: oklch(0.985 0 0);
+  --primary: oklch(0.922 0 0);
+  --primary-foreground: oklch(0.205 0 0);
+  --secondary: oklch(0.269 0 0);
+  --secondary-foreground: oklch(0.985 0 0);
+  --muted: oklch(0.269 0 0);
+  --muted-foreground: oklch(0.708 0 0);
+  --accent: oklch(0.269 0 0);
+  --accent-foreground: oklch(0.985 0 0);
+  --destructive: oklch(0.704 0.191 22.216);
+  --destructive-foreground: oklch(0.985 0 0);
+  --border: oklch(1 0 0 / 10%);
+  --input: oklch(1 0 0 / 15%);
+  --ring: oklch(0.556 0 0);
+
+  /* Promise directions — dark. Brighter + slightly higher chroma to hold up on the dark card. */
+  --promise-deliver: oklch(0.73 0.15 158);
+  --promise-owe: oklch(0.81 0.14 82);
+  --promise-chase: oklch(0.71 0.15 255);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+
+  html {
+    color-scheme: light;
+  }
+
+  html.dark {
+    color-scheme: dark;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    font-synthesis-weight: none;
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+  }
+}
