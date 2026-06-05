@@ -58,18 +58,19 @@ export function checkCache(cache: MessageCache): WiringStatus {
 }
 
 /**
- * claude layer: a CHEAP resolve check, not a model call. Prefers an explicit `CLAUDE_BIN`; otherwise
- * runs `which <bin>` with a short timeout. Resolving the binary is enough to call the layer green —
- * the Phase 4 runner owns real invocation. Never throws; a missing binary is `ok:false`.
+ * claude layer: a CHEAP resolve check, not a model call. Resolves the effective binary
+ * (`CLAUDE_BIN` if set, else `claude`) via `which`, which validates BOTH a bare PATH command and an
+ * absolute path — so a `CLAUDE_BIN` pointing at a non-existent file reports red, not a false green.
+ * Resolving the binary is enough to call the layer green — the Phase 4 runner owns real invocation.
+ * Never throws; a missing binary is `ok:false`.
  */
 export async function checkClaude(
   timeoutMs = 2000,
   env: NodeJS.ProcessEnv = process.env,
 ): Promise<WiringStatus> {
-  const bin = env['CLAUDE_BIN'];
-  if (bin && bin.trim() !== '') {
-    return { ok: true, detail: `CLAUDE_BIN set (${bin})` };
-  }
+  const configured = env['CLAUDE_BIN']?.trim();
+  const bin = configured ? configured : 'claude';
+  const label = configured ? `CLAUDE_BIN "${bin}"` : `"${bin}" on PATH`;
   return new Promise<WiringStatus>((resolve) => {
     let settled = false;
     const done = (status: WiringStatus): void => {
@@ -78,7 +79,7 @@ export async function checkClaude(
       clearTimeout(timer);
       resolve(status);
     };
-    const child = spawn('which', ['claude'], { stdio: ['ignore', 'pipe', 'ignore'] });
+    const child = spawn('which', [bin], { stdio: ['ignore', 'pipe', 'ignore'] });
     let out = '';
     const timer = setTimeout(() => {
       child.kill('SIGKILL');
@@ -91,11 +92,11 @@ export async function checkClaude(
       done({ ok: false, detail: `could not resolve claude: ${errMessage(cause)}` });
     });
     child.on('close', (code) => {
-      const path = out.trim();
-      if (code === 0 && path !== '') {
-        done({ ok: true, detail: `claude on PATH (${path})` });
+      const resolved = out.trim();
+      if (code === 0 && resolved !== '') {
+        done({ ok: true, detail: `claude resolved (${label} → ${resolved})` });
       } else {
-        done({ ok: false, detail: 'claude not found on PATH (set CLAUDE_BIN to override)' });
+        done({ ok: false, detail: `claude not found (${label}); set CLAUDE_BIN to a valid path` });
       }
     });
   });

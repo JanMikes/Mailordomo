@@ -587,7 +587,7 @@ reviewer before moving on.)*
 - [x] **Phase 3** — transport + cache + state machine + folder mirroring ✅
 - [x] **🛑 Phase 3 HUMAN CHECKPOINT** — live one-mailbox read-only verification ✅ (verified live against a real Seznam mailbox)
 - [x] **Phase 4** — Claude job runner + triage + summaries ✅
-- [ ] **Phase 4.5** — first integration milestone (backend↔server↔frontend; rebuild + lock visibility) ← **next**
+- [x] **Phase 4.5** — first integration milestone (backend↔server↔frontend; rebuild + lock visibility) ✅
 - [ ] **Phase 5** — 3-way promises + ranking + stale + overdue-nudge
 - [ ] **Phase 6** — tone memory + learning + sync
 - [ ] **Phase 7a** — Today + do-next cards
@@ -748,6 +748,31 @@ latches once it has actually warned (so a key set after startup — Phase 8 `.en
 daemon run — revisit when the daemon lands (Phase 5). The committed fixtures carry a `<DATE>`
 placeholder (hand-authored for the first commit; the next `refresh-fixtures` run populates it). The
 `promise-extraction` task kind is routed/essential but has no consumer yet (Phase 5 owns it).
+
+### Phase 4.5 review (independent reviewer, fresh context) — first integration slice
+
+**Verdict:** PASS-WITH-CONCERNS → concern fixed. **`verify` green; backend 278 tests** (21
+integration by a separate test-author, mutation-checked). **All four DoD items MET** with evidence:
+(a) **cache rebuild-from-empty** e2e (sync from fake IMAP + push metadata → `rebuildFromEmpty`
+asserts cache/FTS/blobs empty AND the server untouched → re-sync+re-fetch → consistent);
+(b) **cross-instance lock visibility** (two clients/one in-process server: A acquires → B refused
+with A's `locked_by`/`expires_at` + sees it via `listLocks` → release → B acquires); (c) **no body
+crosses to the server** — three enforcement layers (strict DTOs by construction; the client exposes
+no body-carrying method; a capturing-fetch test deep-scans every outbound body, with a self-check
+that a planted `draftBody` trips it); (d) **verify green with the REAL client in the loop** (the
+harness drives the real Hono app + auth middleware + zod validation via `app.fetch`, not a stub).
+
+**No body-crosses or two-way-sync path found** (the rebuild test proves a local wipe leaves the
+server untouched).
+
+**Fixed:** `checkClaude` reported green for a non-existent `CLAUDE_BIN` (false positive) — now it
+resolves the effective binary via `which` (validates a bare PATH command AND an absolute path), so a
+bad `CLAUDE_BIN` reports red.
+**Deferred:** snippet round-trip in the rebuild test is vacuous (MailboxSync doesn't populate
+`snippet` from IMAP envelopes yet — revisit when snippet derivation lands in Phase 5+); integration-
+tier TTL-expiry is covered at the Phase 2 server unit level (the in-process clock isn't injectable
+via `app.fetch`); `MetadataClient` exposes only the Phase-4.5 endpoints (Note/ToneFile/Promise/
+DraftMeta added as later phases consume them).
 
 ---
 

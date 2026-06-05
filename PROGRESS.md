@@ -7,6 +7,37 @@
 
 ---
 
+## 2026-06-05 — Phase 4.5: first integration slice (backend ↔ server ↔ frontend)
+
+**What I did**
+- Built the first REAL vertical slice (three-role split): a typed `MetadataClient` (Bearer +
+  X-Project-Id, shared-DTO-validated, injectable fetch, body-free); a thin localhost Hono API
+  (`/api/wiring` three-layer health + `/api/threads` metadata-only) on 127.0.0.1; a minimal
+  (un-styled) frontend wiring view + Vite `/api` proxy. **Verified live** — the wiring endpoint runs.
+- Separate test-author wrote 21 **integration** tests against the REAL in-process server (via
+  `app.fetch`): real-client round-trip, end-to-end cache rebuild-from-empty, cross-instance lock
+  visibility (the Jan/Simona presence primitive), and a privacy capture-and-scan (no body crosses).
+- Reviewer: PASS-WITH-CONCERNS, all four DoD items MET; fixed the one real issue (`checkClaude`
+  false-green on a bad `CLAUDE_BIN` → now resolves via `which`).
+- **`npm run verify` green: 1312 tests.** Pushed.
+
+**What's half-done**
+- Nothing. Phase 4.5 DoD met. The three layers provably wire together.
+
+**Next**
+- **Phase 5 — 3-way promises + ranking + stale detection + the one sanctioned overdue-nudge**
+  (load-bearing commitment tracker + do-next queue). The `promise-extraction` Haiku route exists;
+  Phase 5 adds the extractor → deterministic reconciler + ranker + the nudge (draft, never send).
+
+**Surprises/decisions**
+- **Privacy holds end-to-end with the real client:** the integration test captures the actual
+  outbound bytes and deep-scans them — a stronger proof than the schema-level rejection alone.
+- `MailboxSync` doesn't populate `snippet` from IMAP envelopes (no standard field) — snippet
+  derivation (from body parsing, locally) is a Phase 5+ item; the rebuild test's snippet check is
+  vacuous until then.
+
+---
+
 ## 2026-06-05 — Phase 4: Claude job runner + triage + summaries (+ CI fix, throttle reframe)
 
 **What I did**
