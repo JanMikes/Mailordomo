@@ -7,6 +7,24 @@
 
 ---
 
+## 2026-06-05 — CI fix #2: cross-platform lockfile (the real @emnapi root cause)
+
+**What I did**
+- CI's `npm ci` was still failing: `Missing: @emnapi/core@1.10.0 / @emnapi/runtime@1.10.0 from lock
+  file`. The earlier npm-11 pin didn't fix it because the root cause is **platform, not npm version**:
+  `@emnapi/core`+`runtime` are a wasm-fallback chain (via `@napi-rs/wasm-runtime` ← `unrs-resolver`,
+  a transitive ESLint dep). npm 11 on **macOS/arm64 prunes them** from the lock (native binding used),
+  but **Linux CI needs them** — so the committed lock was cross-platform-incomplete.
+- Fix: **regenerated `package-lock.json` inside a Linux `node:22` container with npm 11.16.0** (the
+  exact env CI uses), which captures the Linux `@emnapi` chain AND keeps the macOS rollup binary.
+  Verified `npm ci` + `npm run verify` green locally (1518 tests). Only the lock changed.
+
+**Gotcha for future dep changes (IMPORTANT):** running plain `npm install` on macOS (npm 11) will
+RE-PRUNE the `@emnapi` chain and re-break CI. When deps change, regenerate the lock cross-platform:
+`docker run --rm -v "$PWD":/app -w /app node:22-bookworm-slim sh -c "npm i -g npm@11 && npm install --package-lock-only && chown $(id -u):$(id -g) package-lock.json"`
+
+---
+
 ## 2026-06-05 — Phase 5: 3-way promise tracker + ranker + stale + overdue-nudge
 
 **What I did**
