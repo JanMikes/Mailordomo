@@ -7,6 +7,46 @@
 
 ---
 
+## 2026-06-05 — Phase 4: Claude job runner + triage + summaries (+ CI fix, throttle reframe)
+
+**What I did**
+- **Ground-truthed the `claude` invocation model live** before building the runner: confirmed the
+  flags, captured the `--output-format json` envelope, and verified `--json-schema` populates
+  `structured_output`. Two real findings: **macOS has no `timeout` binary** (so the hang-guard is
+  Node-side AbortController, not shell `timeout`); `--permission-mode dontAsk` is valid.
+- **Phase 4** (three-role split): runner interface (real spawns `claude -p`, prompt via stdin,
+  Node timeout; fake for tests; pure buildClaudeArgs + parseClaudeJson seams), concurrency queue,
+  editable `prompts/triage.md` + `summarize.md`, triage (Haiku + json-schema → state machine) and
+  summarization (Sonnet) consumers, recorded fixtures + real `refresh-fixtures` logic. 245 backend
+  tests. Reviewer: PASS-WITH-CONCERNS, all 9 adversarial checks clean; fixed 3 (timer clear, latch,
+  window>0) + a dev-script timeout.
+- **Handled two user messages mid-flight:**
+  1. **CI red** (`npm ci` out of sync): root cause was npm 10 (Node 22 CI) vs npm 11 (dev Node 25)
+     producing different locks. Pinned npm 11 in the CI workflow + Dockerfile builder. `npm ci` clean.
+  2. **Cost model reframe:** Claude Code runs on the user's **subscription**, not paid API. Reframed
+     the "daily budget cap" → a **usage throttle** (rolling 5h window, notional `total_cost_usd`
+     signal, backpressure on deferrable jobs) protecting the shared subscription window; added a
+     **startup warning if `ANTHROPIC_API_KEY` is set** (would divert to paid API). (D24)
+- **`npm run verify` green: 1289 tests.** All pushed to main.
+
+**What's half-done**
+- Nothing half-done. Phase 4 DoD met.
+
+**Next**
+- **Phase 4.5 — first integration milestone:** wire backend ↔ metadata service ↔ a thin frontend;
+  prove end-to-end cache rebuild-from-empty and cross-instance lock visibility (the Jan/Simona
+  presence primitive) with the REAL metadata client (not the fake).
+
+**Surprises/decisions**
+- **Live ground-truthing paid off:** the macOS-no-`timeout` finding would have made every daemon job
+  exit 127 if we'd followed the plan's "shell timeout" literally.
+- **npm 10↔11 lockfile divergence** (optional `@emnapi/*` deps + `peer` markers) is the CI gotcha of
+  running dev on Node 25 while targeting Node 22 — pinned npm 11 everywhere that runs `npm ci`.
+- **Subscription, not API:** the whole cost framing flipped from "don't overspend dollars" to "don't
+  starve the user's interactive window" — a throttle, with an API-key guard. (D24)
+
+---
+
 ## 2026-06-05 — Phases 2 + 3: metadata service + transport/cache/engines (→ mailbox checkpoint)
 
 **What I did**

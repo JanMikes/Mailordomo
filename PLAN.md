@@ -586,8 +586,8 @@ reviewer before moving on.)*
 - [x] **Phase 2** — metadata service (+ Docker + GHCR) ✅
 - [x] **Phase 3** — transport + cache + state machine + folder mirroring ✅
 - [x] **🛑 Phase 3 HUMAN CHECKPOINT** — live one-mailbox read-only verification ✅ (verified live against a real Seznam mailbox)
-- [ ] **Phase 4** — Claude job runner + triage + summaries
-- [ ] **Phase 4.5** — first integration milestone (backend↔server↔frontend; rebuild + lock visibility)
+- [x] **Phase 4** — Claude job runner + triage + summaries ✅
+- [ ] **Phase 4.5** — first integration milestone (backend↔server↔frontend; rebuild + lock visibility) ← **next**
 - [ ] **Phase 5** — 3-way promises + ranking + stale + overdue-nudge
 - [ ] **Phase 6** — tone memory + learning + sync
 - [ ] **Phase 7a** — Today + do-next cards
@@ -722,6 +722,32 @@ non-CONDSTORE server it falls back to UID-range new-message fetches (new mail st
 limitation (recorded for later):** on non-CONDSTORE servers, flag changes made in another client
 surface only on a periodic full-folder rescan — a future enhancement (e.g. a "deep poll"), not a v1
 blocker. (→ D23) Resumed to Phase 4 on the user's delegation ("you verify").
+
+### Phase 4 review (independent reviewer, fresh context) — Claude job runner
+
+**Verdict:** PASS-WITH-CONCERNS → concerns fixed. **`verify` green; backend 245 tests** (111 by a
+separate test-author, 2 mutation-checked). Ground-truthed against live `claude` v2.1.165 before
+building (envelope shape; `--json-schema`→`structured_output`; `dontAsk` valid; **macOS has no
+`timeout`** → Node-side hang-guard; haiku→claude-haiku-4-5).
+
+**All 9 adversarial checks came back clean:** **Golden rule #6 routing floor is un-overridable** —
+`JobSpec` has no model channel, `buildClaudeArgs` derives `--model` from `MODEL_ROUTING(taskKind)`,
+and the compile-time + runtime guards cover all three opus-tier kinds; prompt passed via **stdin**
+(not argv — not in the process list, immune to ARG_MAX); spawn via args array (no shell injection);
+**stateless** (no `--continue`/`--resume`); robust JSON parsing (error/empty/malformed/alias
+fallback); **throttle faithful to D24** (rolling window, notional signal, essential-vs-deferrable
+backpressure); subscription guard correct; **no live `claude` in the gate** (tests replay fixtures;
+the `/tmp` ground-truth is guarded by `existsSync` so CI doesn't fail when it's absent).
+
+**Fixed:** SIGKILL-escalation timer now cleared in `finish()`; the API-key warn-once latch only
+latches once it has actually warned (so a key set after startup — Phase 8 `.env` — still surfaces);
+`CLAUDE_USAGE_WINDOW_HOURS` must be strictly positive (0 silently disabled the throttle); added a
+120s hang-guard to the `refresh-fixtures` dev script.
+
+**Deferred:** open Q #30 **`--bare`** is plumbed + tested but not behaviorally verified on a real
+daemon run — revisit when the daemon lands (Phase 5). The committed fixtures carry a `<DATE>`
+placeholder (hand-authored for the first commit; the next `refresh-fixtures` run populates it). The
+`promise-extraction` task kind is routed/essential but has no consumer yet (Phase 5 owns it).
 
 ---
 
