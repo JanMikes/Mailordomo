@@ -235,6 +235,11 @@ describe('throttleConfigFromEnv — parses CLAUDE_USAGE_THROTTLE / CLAUDE_USAGE_
     expect(throttleConfigFromEnv({ CLAUDE_USAGE_WINDOW_HOURS: '-5' }).windowHours).toBe(
       DEFAULT_USAGE_WINDOW_HOURS,
     );
+    // A 0-length window is rejected (it would make the throttle never fire); the throttle ceiling
+    // accepting 0 is a different, intentional case (asserted below).
+    expect(throttleConfigFromEnv({ CLAUDE_USAGE_WINDOW_HOURS: '0' }).windowHours).toBe(
+      DEFAULT_USAGE_WINDOW_HOURS,
+    );
   });
 
   it('accepts 0 as a valid (non-negative) throttle — a fully-closed window is intentional', () => {

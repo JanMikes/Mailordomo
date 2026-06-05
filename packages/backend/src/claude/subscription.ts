@@ -63,6 +63,12 @@ export function warnIfAnthropicApiKeySetOnce(
   if (warnedThisProcess) {
     return false;
   }
-  warnedThisProcess = true;
-  return warnIfAnthropicApiKeySet(options);
+  // Only latch once we've ACTUALLY warned. A startup call made while the key is unset must NOT
+  // suppress a later warning — credentials/.env may be loaded after the queue/runner is constructed
+  // (Phase 8), and a key set then must still surface.
+  const warned = warnIfAnthropicApiKeySet(options);
+  if (warned) {
+    warnedThisProcess = true;
+  }
+  return warned;
 }

@@ -98,14 +98,16 @@ describe('warnIfAnthropicApiKeySetOnce — fires at most once per process (isola
     expect(logger.calls).toHaveLength(1); // only ONE warning the whole process
   });
 
-  it('once latched, does not warn even if a later call would otherwise (key still set)', async () => {
+  it('does NOT latch on an unset key, so a key set later still warns (Phase 8 .env load)', async () => {
     const once = await freshOnce();
     const logger = capturing();
-    // First call with the key UNSET still latches the process (it ran the guard once).
-    expect(once({ env: {}, logger })).toBe(false); // unset → no warning, but latch is now set
-    // A subsequent call WITH the key set is suppressed by the latch.
-    expect(once({ env: { ANTHROPIC_API_KEY: 'now-set' }, logger })).toBe(false);
+    // A startup call while the key is UNSET must not latch — it never warned.
+    expect(once({ env: {}, logger })).toBe(false);
     expect(logger.calls).toHaveLength(0);
+    // A later call WITH the key set still surfaces the warning, exactly once.
+    expect(once({ env: { ANTHROPIC_API_KEY: 'now-set' }, logger })).toBe(true);
+    expect(once({ env: { ANTHROPIC_API_KEY: 'now-set' }, logger })).toBe(false); // now latched
+    expect(logger.calls).toHaveLength(1);
   });
 
   it('a freshly reset module starts unlatched again (proves the isolation works)', async () => {

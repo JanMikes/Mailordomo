@@ -125,23 +125,39 @@ function buildArgs(job) {
   return args;
 }
 
+/** Hard cap so a stalled `claude` call can't hang fixture regeneration forever. */
+const CLAUDE_TIMEOUT_MS = 120_000;
+
 /** Spawn `claude` (live) and resolve the raw stdout JSON envelope object. */
 function runClaude(job) {
   return new Promise((resolve, reject) => {
     const child = spawn('claude', buildArgs(job), { stdio: ['pipe', 'pipe', 'pipe'] });
     let stdout = '';
     let stderr = '';
+    let settled = false;
+    const settle = (fn) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      fn();
+    };
+    const timer = setTimeout(() => {
+      child.kill('SIGTERM');
+      settle(() => reject(new Error(`claude timed out after ${CLAUDE_TIMEOUT_MS}ms`)));
+    }, CLAUDE_TIMEOUT_MS);
     child.stdout.setEncoding('utf8');
     child.stderr.setEncoding('utf8');
     child.stdout.on('data', (c) => (stdout += c));
     child.stderr.on('data', (c) => (stderr += c));
-    child.on('error', (err) => reject(err));
+    child.on('error', (err) => settle(() => reject(err)));
     child.on('close', (code) => {
-      try {
-        resolve(JSON.parse(stdout.trim()));
-      } catch (err) {
-        reject(new Error(`claude exited ${code}, unparseable stdout: ${err.message}\n${stderr}`));
-      }
+      settle(() => {
+        try {
+          resolve(JSON.parse(stdout.trim()));
+        } catch (err) {
+          reject(new Error(`claude exited ${code}, unparseable stdout: ${err.message}\n${stderr}`));
+        }
+      });
     });
     child.stdin.write(job.userPrompt);
     child.stdin.end();

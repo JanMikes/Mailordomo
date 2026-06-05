@@ -88,11 +88,13 @@ export class RealClaudeRunner implements ClaudeRunner {
       let timedOut = false;
       let settled = false;
 
+      let killTimer: ReturnType<typeof setTimeout> | undefined;
       const timer = setTimeout(() => {
         timedOut = true;
         controller.abort();
-        // AbortController sends SIGTERM; escalate to SIGKILL if it lingers.
-        const killTimer = setTimeout(() => {
+        // AbortController sends SIGTERM; escalate to SIGKILL if the child lingers past the grace
+        // window. killTimer is cleared in finish() if the child exits first.
+        killTimer = setTimeout(() => {
           if (child.exitCode === null && child.signalCode === null) {
             child.kill('SIGKILL');
           }
@@ -105,6 +107,7 @@ export class RealClaudeRunner implements ClaudeRunner {
         if (settled) return;
         settled = true;
         clearTimeout(timer);
+        if (killTimer !== undefined) clearTimeout(killTimer);
         fn();
       };
 

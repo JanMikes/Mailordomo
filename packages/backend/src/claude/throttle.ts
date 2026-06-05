@@ -291,18 +291,31 @@ export interface ThrottleConfig {
  */
 export function throttleConfigFromEnv(env: NodeJS.ProcessEnv = process.env): ThrottleConfig {
   return {
-    throttle: parsePositiveNumber(env.CLAUDE_USAGE_THROTTLE, DEFAULT_USAGE_THROTTLE),
-    windowHours: parsePositiveNumber(env.CLAUDE_USAGE_WINDOW_HOURS, DEFAULT_USAGE_WINDOW_HOURS),
+    // The throttle ceiling may be 0 (a fully-closed gate — always throttled — is intentional).
+    throttle: parseNumericEnv(env.CLAUDE_USAGE_THROTTLE, DEFAULT_USAGE_THROTTLE),
+    // The window length must be strictly positive: 0 makes the window empty (start == now), so the
+    // throttle would never fire — a silent misconfiguration. Fall back to the default instead.
+    windowHours: parseNumericEnv(env.CLAUDE_USAGE_WINDOW_HOURS, DEFAULT_USAGE_WINDOW_HOURS, {
+      requirePositive: true,
+    }),
   };
 }
 
-/** Parse a non-negative finite number from an env string, returning `fallback` on unset/blank/invalid. */
-function parsePositiveNumber(raw: string | undefined, fallback: number): number {
+/**
+ * Parse a finite number from an env string, returning `fallback` on unset/blank/invalid/negative.
+ * By default 0 is accepted (non-negative); pass `requirePositive` to reject 0 too.
+ */
+function parseNumericEnv(
+  raw: string | undefined,
+  fallback: number,
+  { requirePositive = false }: { requirePositive?: boolean } = {},
+): number {
   if (raw === undefined || raw.trim() === '') {
     return fallback;
   }
   const parsed = Number(raw);
-  return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
+  const valid = Number.isFinite(parsed) && (requirePositive ? parsed > 0 : parsed >= 0);
+  return valid ? parsed : fallback;
 }
 
 /** Thrown by the queue/runner when a deferrable job is refused by the usage-throttle gate. */
