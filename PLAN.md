@@ -766,7 +766,7 @@ reviewer before moving on.)*
 - [x] **Phase 6** — tone memory + learning + sync ✅
 - [x] **Phase 7a** — Today + do-next cards ✅ — 🛑 **CHECKPOINT 2 CLEARED** ✅ (user eyeballed live vs seed; approved — ranking reads correctly, my-promises leading; → D30)
 - [x] **Phase 7b** — split work surface + refine chat ✅
-- [ ] **Phase 7c** — 3-pane fallback + project views
+- [x] **Phase 7c** — 3-pane fallback + project views ✅
 - [ ] **Phase 8** — setup wizard + repo pointers + credentials
 - [ ] **Phase 9** — digest + E2E + polish + launchd + docs
 
@@ -1066,6 +1066,36 @@ Phase 9.
 **Deferred (correctly scoped, no DoD gap):** project-NAME field → 7c; repo-freshness wiring → Phase 8;
 out-of-order revert beyond LIFO (D28 structured-rebuild) → later; live SMTP transport + `DraftFiler` Sent-append →
 Phase 8/9; react-router → 7c (the lifted `navigation.tsx` state drops into a router without touching 7b components).
+
+### Phase 7c review (independent reviewer, fresh context) — 3-pane fallback + project views
+
+**Verdict:** PASS. **`npm run verify` green; 1805 tests** (+32 intent-derived by a separate test-author, 3
+mutation-checked; backend `assembleProjectsBoard` + project-name resolver + the new endpoints + projectName
+enrichment, frontend board / 3-pane / landing / nav). Built via the orchestrator-as-architect (D32) → backend
+impl → frontend impl → separate test-author → reviewer split.
+
+**All three golden rules confirmed upheld:** **#3** — the board model + cards are strict + **body-free by
+construction**; a `capturingFetch` deep-scan over board + Today assembly proves no body key crosses; the 3-pane
+reading pane fetches bodies ONLY via the LOCAL `…/messages/:id/body` hop. **#2** — `assembleProjectsBoard` is a
+**pure** read-only assembler; `project-name.ts` is a read-through memo (no writable store); `defaultView` is a
+normal local AppSettings field (not server state, not localStorage). **#1** — no send path touched (board + 3-pane
+are read-first; mutation escalates to the 7b work surface).
+
+**Never-lose-a-thread invariant: UPHELD.** The assembler iterates every thread unconditionally; a no-task thread
+falls to `needs-reply` (never dropped), done-only → `done`, multi-task → the active (non-done) task's group; the
+hard invariant **`totalCards === threadCount`** is mutation-tested over adversarial inputs. The 3-pane left list
+renders all five state buttons (empty ones disabled-but-visible) so no group with threads is hidden; a
+metadata-only thread (not in cache) renders reachable with empty messages — not a trap.
+
+**No must-fix findings.** Two concerns dispositioned: (1) the reviewer's flagged `ProjectResponseSchema =
+AuthedProjectSchema.omit().extend()` "strict-loss" was **empirically checked and is a NON-issue** — in zod 4.4.3
+both `.omit()` and `.extend()` preserve strict mode (it still rejects extra keys); `DoNextCard`/`ThreadDetail` add
+`projectName` **inline** in their `strictObject` (also strict). (2) The `NavRow` disabled branch in `app-shell.tsx`
+is now unreachable (all four nav items live) — a harmless reusable affordance, **deferred to Phase 9 polish**.
+
+**Deferrals correctly scoped:** multi-project SETUP/wizard → Phase 8; per-project config beyond the single
+configured project → Phase 8+; 3-pane inline mutation → escalates to 7b; repo-freshness wiring → Phase 8; LIFO
+revert UI guard → carried from D28.
 
 ---
 

@@ -7,6 +7,48 @@
 
 ---
 
+## 2026-06-06 — Phase 7c: classic 3-pane fallback + project views (Phase 7 complete)
+
+**What I did**
+- Ran **Phase 7c** via the four-role split (orchestrator-as-architect **D32** → backend impl → frontend impl →
+  **separate test-author** → independent **reviewer**). Resolved the **all-projects/per-project vs single-project
+  v1** ambiguity (D32): a **Projects board grouped by task state** that generalizes to N projects.
+  - **Backend:** a **pure, body-free** `assembleProjectsBoard` (groups every thread by state; a no-task thread →
+    `needs-reply`; done included; **never drops a thread**); a **cached project-name resolver** (`pair()` at most
+    once on success, null + retry on failure, never blocks); `GET /api/projects-board` + `GET /api/project`;
+    `projectName` enriched onto the Today cards + thread detail.
+  - **Frontend (no new deps):** the **All-projects board** (grouped by state, a card opens the 7b work surface);
+    the **classic 3-pane fallback** (states+counts | thread list | reading pane that **reuses the 7b ThreadPane +
+    the local `.eml` body hop**, read-first, "open in work surface" escalation); **project NAME** on the Today
+    card (closes the 7a→7c deferral); a persisted **`defaultView`** landing preference (flicker-free) + a settings
+    control.
+- Separate test-author added **32 intent-derived tests** (3 mutation-checked), incl. the **never-lose-a-thread**
+  invariant (`totalCards === threadCount`) over adversarial inputs and a golden-rule-#3 body scan; **no bugs**.
+- Reviewer: **PASS**, all three golden rules + the never-lose-a-thread invariant upheld.
+- **`npm run verify` green: 1805 tests.** Pushed in 4 commits. **Phase 7 (7a + 7b + 7c) is now complete.**
+
+**What's half-done**
+- Nothing in 7c — DoD met. One Phase 9 polish deferral added: the now-unreachable `NavRow` disabled branch in
+  `app-shell.tsx` (harmless reusable affordance, left rather than churned).
+
+**Next**
+- **Phase 8 — setup wizard + repo pointers + credentials** (macOS Keychain via the `security` CLI + per-mailbox
+  `.env` fallback; the guided wizard + raw `.env` editing; repo pointer two modes incl. the git-URL mirror +
+  auto-pull; provider presets — iCloud app-password, Gmail; the Claude binary health-check). **This is where live
+  mail finally gets wired** (creds), per the D30 steer that creds work was deferred to here.
+
+**Surprises/decisions**
+- **The all-projects/per-project brief vs single-project v1 reality** was the one underspecified call this phase —
+  resolved (D32) as a state-grouped Projects board that generalizes to N, recorded rather than escalated (not a
+  golden-rule/high-stakes ambiguity).
+- **Verified empirically that zod 4.4.3 `.omit().extend()` preserves strict mode** — the reviewer's flagged
+  `ProjectResponseSchema` "strict-loss" was a non-issue; checked rather than blind-fixing, avoiding a needless edit.
+- **The 3-pane is a genuine never-trap escape hatch:** it reaches every thread (the assembler iterates all; the
+  left list shows all five states), reads via the LOCAL body hop, and escalates to the 7b work surface for any
+  mutation — so the opinionated view is never a cage.
+
+---
+
 ## 2026-06-06 — Phase 7b: split work surface + refine chat (CHECKPOINT 2 cleared)
 
 **What I did**
