@@ -7,6 +7,50 @@
 
 ---
 
+## 2026-06-05 — Phase 6: tone memory + silent learning + cross-machine sync
+
+**What I did**
+- Folded the two Phase 5→6 boundary steers into PLAN (**D26** separate do-next tiers — my-promise
+  strictly above they-asked, NOT merged; **D27** stale/lock thresholds become user-adjustable Phase 7
+  settings, defaults unchanged), approved the recorded defaults (#21–#30, throttle 2.50/5h), and added
+  **CHECKPOINT 2** (mandatory stop at end of 7a). Pushed.
+- Built **Phase 6** (three-role split: implementer → separate test-author → independent reviewer) on the
+  existing Phase 1 contracts + Phase 2 endpoints: pure tone **layer resolver** (project→mailbox→contact,
+  contact wins), pure **LWW reconciler** mirroring the server (`version_hash` = sha256 of content only),
+  whole-file **sync** (no merge, golden rule #2), and the **silent-learning** engine (pure
+  recurring-instruction + draft-vs-sent-diff signals → Sonnet `learn` job → tone append + LOCAL revert
+  snapshots + server **summary-only** changelog). Added the `learn` task kind (sonnet, deferrable, not
+  outgoing-text), the MetadataClient tone/learning methods, and extended the no-send guard to
+  `learning/** → smtp/**`.
+- Separate test-author added **58 intent-derived tests** (mutation-checked twice). Reviewer:
+  PASS-WITH-CONCERNS, **all three golden rules confirmed upheld**.
+- **`npm run verify` green: 1594 tests.** Pushed.
+
+**What's half-done**
+- Nothing. Phase 6 DoD met. The learning **daemon trigger** (fire after a real send, diff draft-vs-sent)
+  wires in Phase 7b when drafts/sends flow — the engine is built ready + fully tested with the fake
+  runner + in-process server.
+
+**Next**
+- **Phase 7a — Today command center + do-next cards** (app shell + theming + REST/WS data layer + the
+  Today view), folding **D26** (ranker gains the they-asked tier) + **D27** (settings surface). **🛑
+  Mandatory stop at the end of 7a (CHECKPOINT 2)** — the user eyeballs the core UI against real mail
+  before 7b/7c build on it.
+
+**Surprises/decisions**
+- **Reviewer's must-fix (a real §6 hole):** `applyLearning` mutated the tone file BEFORE the server
+  changelog call, so a server error left an untracked, unrevertable tone edit. Reordered to record on
+  the server first (+ roll the tone file back if the local log-append throws) — "tone mutated ⟺ logged"
+  now holds on the failure path.
+- **Deferred the out-of-order-revert guard (D28):** snapshot revert is correct for LIFO (the only v1
+  path; **no revert caller exists yet**). Phase 7's revert UI must design it holistically (LIFO guard or
+  structured-tone rebuild that respects manual edits) — recorded rather than baking in a possibly-wrong
+  constraint.
+- **`version_hash` = sha256(content) only** is exactly what makes the cross-machine LWW no-op + tie-break
+  correct: identical tone content on any machine → identical hash → a true no-op re-push.
+
+---
+
 ## 2026-06-05 — CI fix #2: cross-platform lockfile (the real @emnapi root cause)
 
 **What I did**

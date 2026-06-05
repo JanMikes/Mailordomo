@@ -634,6 +634,26 @@ Lucide, **REST + WebSocket** client to the backend, React Query, light/dark, sen
   rules and code conventions) read by the backend and exposed to the frontend, with a settings surface
   in Phase 7. Stale-days feed `detectStale`; the lock-minutes value is sent as `ttl_seconds` on
   acquire/refresh. Other recorded defaults (#21–#30, incl. usage throttle 2.50/5h) are approved as-is.
+- **D28** *(Phase 6 review)* **Tone memory + silent learning + cross-machine sync** built backend-only
+  on the Phase 1/2 contracts+endpoints: pure **tone layer resolver** (project→mailbox→contact, contact
+  read last so it wins), pure **LWW reconciler** matching the server's `toneWriteWins` exactly
+  (`version_hash` = sha256 of **content only** → identical content cross-machine = identical hash = true
+  no-op), whole-file sync (no field merge, golden rule #2), and the **silent-learning** engine (pure
+  `recurringInstructions`/`draftVsSentDiff` signals → Sonnet `learn` job → tone append + **local**
+  revert snapshots + server **summary-only** changelog). `learn` task kind = **sonnet**, NOT
+  outgoing-text, **deferrable** in the throttle. No-send guard extended so **`learning/** ` cannot
+  import `smtp/**`** (static/dynamic/require). All three golden rules confirmed upheld by the reviewer
+  (no-send structural+behavioral; LWW whole-file; only `summary`+`content` cross). **Review fixes
+  applied:** (1) `applyLearning` now records on the server **before** the local tone write (+rolls the
+  tone file back if the local log-append fails) so a failure never leaves an untracked, unrevertable
+  tone edit — closing the §6 "logged + revertable" invariant on the error path; (2) `syncToneFiles`
+  buckets an idempotent re-push as `noop` (was mislabeled `pulled`). **Deferred (→ Phase 7):**
+  **out-of-order revert** restores the snapshot captured at apply-time, so reverting an older lesson
+  while a newer one is applied to the same file silently drops the newer lesson. Correct for **LIFO**
+  (the only v1 path; there is **no revert caller yet**). The Phase 7 revert UI must constrain this —
+  either a **LIFO guard** (refuse reverting anything but the most-recently-applied un-reverted lesson
+  for a file) or a **structured-tone rebuild** that respects manual tone edits. Recorded rather than
+  baking in a possibly-wrong constraint now (the reviewer's explicit call).
 
 ---
 
@@ -651,8 +671,8 @@ reviewer before moving on.)*
 - [x] **Phase 4** — Claude job runner + triage + summaries ✅
 - [x] **Phase 4.5** — first integration milestone (backend↔server↔frontend; rebuild + lock visibility) ✅
 - [x] **Phase 5** — 3-way promises + ranking + stale + overdue-nudge ✅
-- [ ] **Phase 6** — tone memory + learning + sync ← **next**
-- [ ] **Phase 7a** — Today + do-next cards
+- [x] **Phase 6** — tone memory + learning + sync ✅
+- [ ] **Phase 7a** — Today + do-next cards ← **next** (🛑 mandatory stop at its end — CHECKPOINT 2)
 - [ ] **Phase 7b** — split work surface + refine chat
 - [ ] **Phase 7c** — 3-pane fallback + project views
 - [ ] **Phase 8** — setup wizard + repo pointers + credentials
@@ -862,6 +882,34 @@ yet, so this is a recorded **caller-policy** decision to settle when the queue i
 **strictly above** — NOT merged (this reverses the old "include them together" leaning). The Phase 7a
 ranker change adds a second commitment band; the `they-asked` ordering test lands with it. (`next
 month` overflow test still deferred.)
+
+### Phase 6 review (independent reviewer, fresh context) — tone memory + learning + sync
+
+**Verdict:** PASS-WITH-CONCERNS → concerns dispositioned. **`verify` green; 1594 tests** (backend
+**550**: +58 intent-derived by a separate test-author, mutation-checked twice — flipping the server
+tie-break and reversing the layer order each failed a specific test). Built backend-only on the
+existing Phase 1 contracts + Phase 2 endpoints (three-role split).
+
+**All three golden rules confirmed upheld (the key results):** **#1** — no `smtp/**` import anywhere
+in `learning/**`/`tone/**`; the ESLint guard now bars `learning/** → smtp/**` for static/dynamic/
+`require`/barrel (a fixture proves all four trip + positive controls); a full apply→revert through
+hostile transmit-spy collaborators makes **0 sends**. **#2** — client `decideLww` is byte-equivalent
+to the server's `toneWriteWins` (newer `updated_at`; tie→strictly-greater `version_hash`; identical→
+noop); sync is **whole-file replacement only**, no field merge anywhere; `version_hash` = sha256 of
+**content only** (cross-machine no-op correct). **#3** — only `LearningEntry.summary` + `ToneFile.content`
+cross; a capturing-fetch deep-scan (non-vacuous, self-checked) proves the draft/sent bodies, the diff,
+and the before/after snapshots never leave.
+
+**Fixed (this session):** (1) **MUST-FIX** — `applyLearning` wrote the tone file *before* the server
+`createLearningEntry`, so a server error left an untracked, unrevertable tone edit (broke §6 "logged +
+revertable"). Now records on the server **first** (nothing local mutated on failure) + rolls the tone
+file back if the local log-append throws. (2) `syncToneFiles` mislabeled an idempotent re-push as
+`pulled` → now `noop`.
+**Deferred (→ D28 / Phase 7):** **out-of-order revert** silently drops newer lessons (snapshot
+semantics; correct for LIFO, the only v1 path; **no revert caller exists yet**). The Phase 7 revert UI
+must constrain it (LIFO guard or structured-tone rebuild) — recorded rather than baking in a possibly-
+wrong constraint now. Also noted: the daemon trigger for learning (after a real send) wires in Phase 7b
+when drafts/sends flow; the engine is built ready + fully tested with the fake runner + in-process server.
 
 ---
 

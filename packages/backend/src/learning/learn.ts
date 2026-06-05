@@ -165,9 +165,10 @@ export interface LearningApplied {
 /**
  * Apply a learned lesson end-to-end:
  *  1. run the SONNET `learn` job (`--json-schema`) → `{tone_update, summary}`;
- *  2. APPEND `tone_update` into the scoped tone file, capturing before/after content LOCALLY;
- *  3. record the changelog: `createLearningEntry` on the server (SUMMARY ONLY) + a local record with
- *     the before/after snapshots (for revert).
+ *  2. record the changelog on the server FIRST (`createLearningEntry`, SUMMARY ONLY) so a server
+ *     failure mutates nothing locally (no untracked tone edit);
+ *  3. APPEND `tone_update` into the scoped tone file + write the local revert snapshot (rolled back
+ *     together if the local write fails) — before/after content stays LOCAL.
  * Returns the applied result. Pass the FAKE runner + an in-process server in tests for determinism.
  */
 export async function applyLearning(
@@ -181,10 +182,23 @@ export async function applyLearning(
   const result = await deps.runner.run(spec);
   const output = parseLearnOutput(result);
 
-  // Apply to the tone file, capturing the before/after snapshots locally (for revert).
+  // Compute the before/after tone snapshots up front — pure reads, NO mutation yet.
   const before = deps.store.read(target.path)?.content ?? '';
   const after = appendLesson(before, output.tone_update);
   const updatedBy = ctx.updatedBy ?? AUTOMATED_ACTOR;
+
+  // Record on the SERVER FIRST (summary only). If this throws, nothing local has been mutated — so
+  // there is no untracked tone edit, and the §6 invariant "a tone change is always logged + revertable"
+  // holds on the failure path too. The server assigns the id + applied_at the local snapshot is keyed by.
+  const entry = await deps.metadata.createLearningEntry({
+    project_id: target.projectId,
+    scope: target.scope,
+    summary: output.summary,
+  });
+
+  // Then mutate LOCALLY as an atomic pair: write the tone file, then append the revert snapshot. If the
+  // (local) log append fails after the tone write, roll the tone file back to `before` so we never leave
+  // a tone edit with no changelog record to undo it ("tone mutated ⟺ logged").
   const toneFile = deps.store.write({
     scope: target.scope,
     path: target.path,
@@ -192,24 +206,28 @@ export async function applyLearning(
     updated_by: updatedBy,
     updated_at: ctx.now,
   });
-
-  // Record the changelog: server gets the SUMMARY ONLY; the snapshots stay local.
-  const entry = await deps.metadata.createLearningEntry({
-    project_id: target.projectId,
-    scope: target.scope,
-    summary: output.summary,
-  });
-  deps.log.append({
-    id: entry.id,
-    project_id: target.projectId,
-    scope: target.scope,
-    path: target.path,
-    summary: output.summary,
-    before_content: before,
-    after_content: after,
-    applied_at: entry.applied_at,
-    reverted_at: null,
-  });
+  try {
+    deps.log.append({
+      id: entry.id,
+      project_id: target.projectId,
+      scope: target.scope,
+      path: target.path,
+      summary: output.summary,
+      before_content: before,
+      after_content: after,
+      applied_at: entry.applied_at,
+      reverted_at: null,
+    });
+  } catch (cause) {
+    deps.store.write({
+      scope: target.scope,
+      path: target.path,
+      content: before,
+      updated_by: updatedBy,
+      updated_at: ctx.now,
+    });
+    throw cause;
+  }
 
   return {
     entry,
@@ -227,8 +245,10 @@ export async function applyLearning(
  * (`revertLearningEntry`, idempotent). Idempotent overall — re-reverting an already-reverted entry
  * skips the (already-applied) content restore but still confirms the server flag.
  *
- * NOTE: revert restores the snapshot captured WHEN THIS lesson was applied; reverting lessons out of
- * the order they were applied can therefore drop later lessons (snapshot semantics, not field merge).
+ * NOTE: revert restores the snapshot captured WHEN THIS lesson was applied. Reverting lessons out of
+ * the order they were applied can therefore drop later lessons applied to the same file (snapshot
+ * semantics, not a field merge). There is NO caller yet; Phase 7 wires revert behind a UI and must
+ * constrain it (LIFO, or a structured-tone rebuild that respects manual edits) — see PLAN.md D28.
  */
 export async function revertLearning(
   deps: LearningDeps,

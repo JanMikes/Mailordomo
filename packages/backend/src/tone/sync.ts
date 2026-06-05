@@ -68,8 +68,15 @@ export async function syncToneFiles(
     store.adopt(res.file);
     if (res.accepted) {
       pushed.add(res.file.path);
+    } else if (
+      res.file.version_hash === local.version_hash &&
+      res.file.updated_at === local.updated_at
+    ) {
+      // Identical re-push: the server confirmed it already held our exact version — a true no-op, not
+      // a pull (nothing changed locally). Bucketing it as `pulled` would make a converged sync look busy.
+      noop.add(res.file.path);
     } else {
-      // The server already had a newer version; adopting it is an LWW pull.
+      // The server already had a genuinely newer version; adopting it is an LWW pull.
       pulled.add(res.file.path);
     }
   }
