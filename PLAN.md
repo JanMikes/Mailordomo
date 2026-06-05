@@ -692,7 +692,7 @@ reviewer before moving on.)*
 - [x] **Phase 4.5** — first integration milestone (backend↔server↔frontend; rebuild + lock visibility) ✅
 - [x] **Phase 5** — 3-way promises + ranking + stale + overdue-nudge ✅
 - [x] **Phase 6** — tone memory + learning + sync ✅
-- [ ] **Phase 7a** — Today + do-next cards ← **next** (🛑 mandatory stop at its end — CHECKPOINT 2)
+- [x] **Phase 7a** — Today + do-next cards ✅ — 🛑 **CHECKPOINT 2: paused for user eyeball** (see below)
 - [ ] **Phase 7b** — split work surface + refine chat
 - [ ] **Phase 7c** — 3-pane fallback + project views
 - [ ] **Phase 8** — setup wizard + repo pointers + credentials
@@ -930,6 +930,38 @@ semantics; correct for LIFO, the only v1 path; **no revert caller exists yet**).
 must constrain it (LIFO guard or structured-tone rebuild) — recorded rather than baking in a possibly-
 wrong constraint now. Also noted: the daemon trigger for learning (after a real send) wires in Phase 7b
 when drafts/sends flow; the engine is built ready + fully tested with the fake runner + in-process server.
+
+### Phase 7a review (independent reviewer, fresh context) — Today command center + do-next cards
+
+**Verdict:** PASS-WITH-CONCERNS → the one real concern fixed. **`verify` green; 1664 tests** (backend
+**605**, frontend **16**, server 211, shared 832; +49 intent-derived by a separate test-author across
+10 files, ranker tier-separation **mutation-checked twice**). Built via the four-role split
+(architect blueprint → backend impl A → frontend impl B → separate test-author → reviewer).
+
+**All three golden rules confirmed upheld (evidence):** **#1** — **no send path in the 7a API**; the
+card "Draft" is an inert `disabled` stub (a test asserts clicking it fires no mutation); inline actions
+are metadata-only (mark-done transition, snooze). **#3** — `DoNextCard`/`TodayReadModel` are strict +
+**body-free** (only subject/snippet/sender + metadata); the assembler never reads a body; the REST
+client zod-validates every response; the WS carries no payload; a test asserts `!('body' in card)` and
+scans the serialized model. **#2** — settings live in a **local backend JSON file** (not server state,
+**zero `localStorage`** as truth — grep-confirmed); the Today view only READS metadata + cache, no
+write-back loop, no merge. **D26 ranker** exactly implements the strict tiers (`hasPromise` compared
+first ⇒ undated my-promise beats overdue they-asked; `awaiting-them` excluded; pure; consequence seam
+intact). **D27** stale-days reach `detectStale` and the lock-minutes knob is surfaced (consumed in 7b).
+
+**Live boot smoke (orchestrator):** real metadata server + `seed:today` (4 threads, 5 promises across
+all 3 directions, 2 drafts) + backend booted as real processes; `GET /api/wiring` all-green; `GET
+/api/today` returned a valid model with the **D26 tiers visibly correct** (both overdue my-promise
+cards above the due-soon they-asked card) and `hasBody:false` on every card. The CHECKPOINT-2 runbook
+works end-to-end.
+
+**Fixed:** the frontend manifest was missing its `@mailordomo/shared` declaration (phantom dep —
+resolved via workspace hoisting but would break under strict isolation, contra D17); added
+`"@mailordomo/shared": "*"` + regenerated the cross-platform lockfile (`npm ci` green).
+**Deferred (→ 7b/7c):** `DoNextCard` shows the raw `projectId` (no project-NAME field on the model yet)
+— acceptable for the checkpoint (seed uses a readable id), but per-project views (7c) should add a
+resolved project name; the lock-timeout setting's acquire/refresh call-site lands with the 7b work
+surface; the learning revert UI's LIFO/structured guard (D28) is still 7b/7c.
 
 ---
 

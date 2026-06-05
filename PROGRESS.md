@@ -7,6 +7,48 @@
 
 ---
 
+## 2026-06-05 — Phase 7a: Today command center + do-next cards (🛑 CHECKPOINT 2)
+
+**What I did**
+- Ran Phase 7a via a **four-role split**: a code-architect **blueprint** first (it found the
+  load-bearing fact that the **daemon loop is still a stub** → CHECKPOINT-2 needs a **seed path**),
+  then **Implementer A** (shared `today.ts`/`settings.ts` contracts + **D26 ranker extension** + pure
+  Today assembler + file settings store + `GET /api/today`, `GET/PUT /api/settings`, mark-done/snooze
+  endpoints + **WebSocket** `today:changed` + `seed:today`), **Implementer B** (frontend foundation:
+  **Tailwind v4 + shadcn/ui + Lucide + React Query**, app shell + theming via `AppSettings.colorScheme`
+  (no localStorage-as-truth), the Today view — 3-way metric cards green/amber/blue, done-vs-remaining,
+  ranked do-next cards, settings popover; **Draft is an inert disabled stub** — no send path), a
+  **separate test-author** (+49 intent-derived tests, ranker tier-separation mutation-checked), and an
+  independent **reviewer** (PASS-WITH-CONCERNS, all 3 golden rules upheld).
+- **Live boot smoke** (real server + seed + backend processes): `/api/today` returns a valid model with
+  the **D26 tiers visibly correct** and `hasBody:false` on every card. The checkpoint runbook works.
+- Sequenced the phase to dodge the **cross-platform lockfile** gotcha: implementers installed deps
+  locally; I regenerated `package-lock.json` in a Linux `node:22` container (twice — frontend deps, then
+  the `@mailordomo/shared` fix) and validated `npm ci` green each time.
+- Fixed the reviewer's one real concern (frontend manifest missing its `@mailordomo/shared` dep).
+- **`npm run verify` green: 1664 tests.** Committed; **about to push, then STOP at CHECKPOINT 2.**
+
+**What's half-done**
+- Nothing in 7a — DoD met. **Deliberately paused at CHECKPOINT 2** (per the user's steer) before 7b/7c so
+  the user can eyeball the core UI against real mail.
+
+**Next (after the checkpoint go-ahead)**
+- **Phase 7b — split work surface + refine chat** (thread + pinned summary left; draft + refine-chat
+  right, **Send as the primary action**, instruction textarea pinned). This is where the **thread lock**
+  acquire/refresh (consuming `lockTimeoutMinutes` → `ttl_seconds`), the **learning daemon trigger**
+  (draft-vs-sent), and the **learning revert UI** (the D28 LIFO/structured guard) land.
+
+**Surprises/decisions**
+- **The daemon loop is still a stub (D29):** triage/extraction exist but nothing yet polls real mail →
+  metadata in a running loop (that is Phase 9). So CHECKPOINT-2 uses `seed:today` (real cached threads
+  where present + synthetic task/promise overlays across all 3 directions) to make the UI reviewable.
+- **D26 is live and correct:** the ranker key `[hasMyPromise, myPromiseUrgency, hasTheyAsked,
+  theyAskedUrgency, importance, age]` keeps my-promise STRICTLY above they-asked — verified by a
+  mutation check AND seen in the live `/api/today` ordering.
+- **Known display gap (→ 7c):** cards show the raw `projectId` (the model has no project-NAME field yet).
+
+---
+
 ## 2026-06-05 — Phase 6: tone memory + silent learning + cross-machine sync
 
 **What I did**
