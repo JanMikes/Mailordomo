@@ -1,0 +1,15 @@
+# Context filter for packages/server/Dockerfile (BuildKit honors <dockerfile>.dockerignore).
+# The build context is the repo root; keep it lean — node_modules and build outputs are recreated
+# inside the image.
+**/node_modules
+**/dist
+**/build
+**/coverage
+**/.vite
+**/.turbo
+.git
+.github
+**/*.log
+**/.DS_Store
+data
+packages/*/data
