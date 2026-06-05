@@ -18,6 +18,7 @@
     "build": "npm run build --workspaces --if-present",
     "verify": "npm run typecheck && npm run lint && npm run test && npm run build",
     "refresh-fixtures": "node scripts/refresh-fixtures.mjs",
+    "seed:today": "tsx packages/backend/scripts/seed-today.ts",
     "prepare": "husky"
   },
   "devDependencies": {
@@ -30,6 +31,7 @@
     "lint-staged": "^17.0.7",
     "prettier": "^3.8.3",
     "tsup": "^8.5.1",
+    "tsx": "^4.22.4",
     "typescript": "^6.0.3",
     "typescript-eslint": "^8.60.1",
     "vitest": "^4.1.8"

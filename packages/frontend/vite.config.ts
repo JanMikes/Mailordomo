@@ -13,6 +13,8 @@ export default defineConfig({
       '/api': {
         target: 'http://127.0.0.1:4317',
         changeOrigin: true,
+        // Proxy WebSocket upgrades too (the Today live-update socket at /api/ws — Phase 7a).
+        ws: true,
       },
     },
   },

@@ -14,7 +14,7 @@ const DAY = 86_400_000;
 const fromNow = (ms: number): string => new Date(Date.parse(NOW) + ms).toISOString();
 
 function task(over: Partial<RankableTask> & { id: string }): RankableTask {
-  return { importance: 'normal', myPromises: [], lastActivityIso: NOW, ...over };
+  return { importance: 'normal', myPromises: [], theyAsked: [], lastActivityIso: NOW, ...over };
 }
 
 const order = (tasks: readonly RankableTask[]): readonly string[] => rankTasks(tasks, NOW).ordered;

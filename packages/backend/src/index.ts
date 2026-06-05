@@ -13,9 +13,12 @@
  *                   Sonnet `learn` job + the local changelog. No import path to the send module.
  *  - `metadata-client/` — the typed HTTP client for the metadata service (Phase 4.5; metadata only,
  *                   injectable `fetch` seam, zod-validated responses).
- *  - `api/`       — the thin localhost backend API factory (`createBackendApi`) + wiring checks
- *                   (Phase 4.5). The runnable `api/server.ts` entry is NOT re-exported (it has a
- *                   listen side-effect); import it only to start the server.
+ *  - `settings/`  — the LOCAL app settings store (Phase 7a): a JSON config file (stale thresholds,
+ *                   lock timeout, color scheme) read by the backend and exposed via `/api/settings`.
+ *  - `api/`       — the thin localhost backend API factory (`createBackendApi`) + wiring checks +
+ *                   the Today read-model assembler + the WS server (Phase 4.5 / 7a). The runnable
+ *                   `api/server.ts` entry is NOT re-exported (it has a listen side-effect); import it
+ *                   only to start the server.
  *
  * The SMTP send path (`smtp/send`) and the background daemon (`daemon/`) are deliberately NOT
  * re-exported here: they are imported directly where used, preserving the structural no-send
@@ -31,4 +34,5 @@ export * from './claude';
 export * from './tone';
 export * from './learning';
 export * from './metadata-client';
+export * from './settings';
 export * from './api';

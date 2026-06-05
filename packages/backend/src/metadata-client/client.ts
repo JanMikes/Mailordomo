@@ -38,30 +38,42 @@ import type {
   AcquireLockRequest,
   AcquireLockResponse,
   AuthedProject,
+  CreateDraftMetaRequest,
   CreateLearningEntryRequest,
+  CreatePromiseRequest,
   CreateTaskRequest,
+  CreateTaskTransitionRequest,
+  DraftMeta,
   LearningEntry,
   Lock,
+  PromiseRecord,
   PutToneFileRequest,
   PutToneFileResponse,
   RefreshLockRequest,
   ReleaseLockRequest,
   ReleaseLockResponse,
   Task,
+  TaskTransition,
   Thread,
   ToneFile,
+  UpdateTaskRequest,
   UpsertThreadRequest,
 } from '@mailordomo/shared';
 import {
   AcquireLockResponseSchema,
   ApiErrorSchema,
+  DraftMetaListResponseSchema,
+  DraftMetaSchema,
   LearningEntryListResponseSchema,
   LearningEntrySchema,
   LockSchema,
   PairResponseSchema,
+  PromiseListResponseSchema,
+  PromiseSchema,
   PutToneFileResponseSchema,
   TaskListResponseSchema,
   TaskSchema,
+  TaskTransitionSchema,
   ThreadListResponseSchema,
   ThreadSchema,
   ToneFileListResponseSchema,
@@ -105,6 +117,11 @@ export class MetadataClient {
     this.token = config.token;
     // Bind so a destructured global `fetch` keeps its correct `this` (some runtimes require it).
     this.doFetch = config.fetch ?? ((input, init) => fetch(input, init));
+  }
+
+  /** The shared project id this client is scoped to (the single Today project — D29). */
+  getProjectId(): string {
+    return this.projectId;
   }
 
   /* ----------------------------- Pairing / auth ----------------------------- */
@@ -157,6 +174,66 @@ export class MetadataClient {
       threadId === undefined ? '/tasks' : `/tasks?thread_id=${encodeURIComponent(threadId)}`;
     const res = await this.request('GET', path);
     return this.parse(res, TaskListResponseSchema);
+  }
+
+  /**
+   * PATCH a task's direct fields (deadline / follow_up_at / importance). Used by the Today snooze
+   * action to set `follow_up_at`. Metadata only; state changes go through {@link createTransition}.
+   */
+  async updateTask(taskId: string, req: UpdateTaskRequest): Promise<Task> {
+    const res = await this.request('PATCH', `/tasks/${encodeURIComponent(taskId)}`, req);
+    return this.parse(res, TaskSchema);
+  }
+
+  /**
+   * Record an actor-attributed state transition (`POST /tasks/:id/transitions`). The server derives
+   * `from` from the task's current state. Used by the Today mark-done action. This is a METADATA
+   * write — it never sends mail (Golden rule #1).
+   */
+  async createTransition(
+    taskId: string,
+    req: CreateTaskTransitionRequest,
+  ): Promise<TaskTransition> {
+    const res = await this.request('POST', `/tasks/${encodeURIComponent(taskId)}/transitions`, req);
+    return this.parse(res, TaskTransitionSchema);
+  }
+
+  /* -------------------------------- Promises -------------------------------- */
+
+  /** Create a 3-way promise record on a thread (the reconciler / dev seed writes these). */
+  async createPromise(req: CreatePromiseRequest): Promise<PromiseRecord> {
+    const res = await this.request('POST', '/promises', req);
+    return this.parse(res, PromiseSchema);
+  }
+
+  /** List the 3-way promise records, optionally filtered to a single thread (feeds the Today view). */
+  async listPromises(threadId?: string): Promise<PromiseRecord[]> {
+    const path =
+      threadId === undefined ? '/promises' : `/promises?thread_id=${encodeURIComponent(threadId)}`;
+    const res = await this.request('GET', path);
+    return this.parse(res, PromiseListResponseSchema);
+  }
+
+  /* ------------------------------ Draft metadata ---------------------------- */
+
+  /**
+   * Create draft METADATA (model/author/version — never body, Golden rule #3). Records THAT a draft
+   * exists; the draft text stays local. Used by the dev seed and (later) the draft flow.
+   */
+  async createDraftMeta(req: CreateDraftMetaRequest): Promise<DraftMeta> {
+    const res = await this.request('POST', '/drafts', req);
+    return this.parse(res, DraftMetaSchema);
+  }
+
+  /**
+   * List draft METADATA (existence/model/author/timestamp — never body, Golden rule #3), optionally
+   * filtered to a single thread. The Today view uses this only to flag `hasDraftReady` on a card.
+   */
+  async listDraftMeta(threadId?: string): Promise<DraftMeta[]> {
+    const path =
+      threadId === undefined ? '/drafts' : `/drafts?thread_id=${encodeURIComponent(threadId)}`;
+    const res = await this.request('GET', path);
+    return this.parse(res, DraftMetaListResponseSchema);
   }
 
   /* --------------------------------- Locks ---------------------------------- */

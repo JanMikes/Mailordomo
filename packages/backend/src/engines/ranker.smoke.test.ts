@@ -10,7 +10,7 @@ import type { ConsequenceJudge, RankableTask } from './ranker';
 const NOW = '2026-06-05T12:00:00Z';
 
 function task(over: Partial<RankableTask> & { id: string }): RankableTask {
-  return { importance: 'normal', myPromises: [], lastActivityIso: NOW, ...over };
+  return { importance: 'normal', myPromises: [], theyAsked: [], lastActivityIso: NOW, ...over };
 }
 
 describe('rankTasks — §8 priority order', () => {
@@ -63,6 +63,32 @@ describe('rankTasks — §8 priority order', () => {
     const { ordered, tieGroups } = rankTasks([a, b], NOW);
     expect(ordered).toEqual(['a', 'b']);
     expect(tieGroups).toEqual([['a', 'b']]);
+  });
+});
+
+describe('D26 — they-asked is a SECOND commitment tier (below my-promise, above importance)', () => {
+  it('an UNDATED my-promise outranks an OVERDUE they-asked (my own commitments lead)', () => {
+    const mine = task({
+      id: 'mine',
+      importance: 'low',
+      myPromises: [{ status: 'open', due_at: null }],
+    });
+    const owed = task({
+      id: 'owed',
+      importance: 'high',
+      theyAsked: [{ status: 'overdue', due_at: '2026-06-01T00:00:00Z' }],
+    });
+    expect(rankTasks([owed, mine], NOW).ordered).toEqual(['mine', 'owed']);
+  });
+
+  it('a they-asked commitment outranks a plain high-importance task with no commitment', () => {
+    const owed = task({
+      id: 'owed',
+      importance: 'low',
+      theyAsked: [{ status: 'open', due_at: '2026-06-10T00:00:00Z' }],
+    });
+    const vip = task({ id: 'vip', importance: 'high' });
+    expect(rankTasks([vip, owed], NOW).ordered).toEqual(['owed', 'vip']);
   });
 });
 

@@ -18,7 +18,12 @@
  * Thresholds are sensible DEFAULTS (documented above), overridable via {@link StaleThresholds}. The
  * function is total and pure: same inputs → same verdict, unit-testable with a fixed `now`.
  */
-import type { TaskState } from '@mailordomo/shared';
+import type { StaleReason, TaskState } from '@mailordomo/shared';
+
+// Re-export so existing consumers (and tests) can keep importing `StaleReason` from the engine; the
+// vocabulary itself now lives in `@mailordomo/shared` (one source of truth, shared with the Today
+// contract). See `shared/src/enums.ts` for the value list + per-reason UI meaning.
+export type { StaleReason };
 
 /** A `waiting` thread with no follow-up deadline is stale after this many days of silence. */
 export const DEFAULT_WAITING_STALE_DAYS = 3;
@@ -33,13 +38,6 @@ export interface StaleThresholds {
   readonly waitingStaleDays?: number;
   readonly needsReplyStaleDays?: number;
 }
-
-/** Why a thread is stale — drives the UI copy and which action is offered. */
-export type StaleReason =
-  | 'follow-up-deadline-passed' // a follow-up/deadline time has elapsed
-  | 'awaiting-reply-too-long' // `waiting` with no deadline, silent past the threshold
-  | 'in-follow-up-state' // already in `follow-up`: act now (chase)
-  | 'unanswered-too-long'; // `needs-reply`/`drafted` I'm sitting on past the threshold
 
 /** The stale verdict for one thread. */
 export interface StaleVerdict {

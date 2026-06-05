@@ -1,9 +1,13 @@
 /**
  * The "do-next" RANKER — a PURE engine (no IO, no wall clock; "now" is injected).
  *
- * It implements PROJECT.md §8's priority order EXACTLY, as a total ordering over task items:
+ * It implements PROJECT.md §8's priority order (with the D26 second commitment tier folded in), as a
+ * total ordering over task items:
  *   1. PROMISES/DEADLINES I MADE   — commitments first (an item with an open/overdue `my-promise`,
  *      most-overdue / soonest-due first).
+ *   1b. THEY ASKED OF ME (D26)     — their requests/deadlines of me ("I owe") form a SECOND tier
+ *      between step 1 and step 2: strictly BELOW my own promises, strictly ABOVE sender importance.
+ *      `awaiting-them` is NOT a tier (it drives the chase queue, not "what I must deliver").
  *   2. SENDER IMPORTANCE           — paying clients > internal > newsletters (`high > normal > low`).
  *   3. AGE / STALENESS             — oldest unanswered first (largest age wins).
  *   4. CLAUDE'S CONSEQUENCE        — what hurts most if ignored. This is a Sonnet TIE-BREAK ONLY and
@@ -28,11 +32,20 @@ export interface RankableTask {
   /** Sender/task importance from the metadata service (§8 step 2). */
   readonly importance: Importance;
   /**
-   * The MY-PROMISE records attached to this task that are still actionable (`open`/`overdue`). Used
-   * for §8 step 1. An empty list ⇒ no commitment I made is outstanding on this task. Each carries the
-   * resolved `due_at` (may be null = no date).
+   * The MY-PROMISE records attached to this task (`my-promise` direction). Used for §8 step 1
+   * (commitments I made — the TOP tier). An empty list ⇒ no commitment I made is outstanding on this
+   * task. Only actionable (`open`/`overdue`) records count; each carries the resolved `due_at`
+   * (may be null = no date).
    */
   readonly myPromises: readonly Pick<PromiseRecord, 'status' | 'due_at'>[];
+  /**
+   * The THEY-ASKED records attached to this task (`they-asked` direction — their request/deadline of
+   * me, "I owe"). This is the SECOND commitment tier (D26): it ranks strictly BELOW `myPromises` and
+   * strictly ABOVE sender importance, so my own commitments always lead their requests. Same shape
+   * and actionable filter as {@link myPromises}. `awaiting-them` is deliberately NOT here — it drives
+   * the chase queue, never the "what I must deliver" rank.
+   */
+  readonly theyAsked: readonly Pick<PromiseRecord, 'status' | 'due_at'>[];
   /**
    * When the thread last had activity (ISO-8601), for §8 step 3 (oldest-first). Null = unknown, which
    * sorts as the OLDEST (an item with no known activity is treated as maximally stale so it surfaces).
@@ -49,9 +62,11 @@ function isActionable(p: Pick<PromiseRecord, 'status'>): boolean {
 }
 
 /**
- * The §8-step-1 "commitment urgency" key for a task, derived ONLY from my-promises:
- *  - tasks with NO actionable my-promise rank BELOW any task that has one (commitments come first);
- *  - among tasks that have one, the one with the most-urgent deadline ranks first:
+ * The "urgency" key for ONE commitment tier — a set of same-direction promises (my-promises OR
+ * they-asked), derived ONLY from those promises. Reused for BOTH tiers (D26) so the two bands compute
+ * urgency identically; only their POSITION in {@link RankKey} differs (my-promises above they-asked):
+ *  - a tier with NO actionable promise ranks BELOW any tier that has one (commitments come first);
+ *  - among tiers that have one, the one with the most-urgent deadline ranks first:
  *      · an OVERDUE promise (resolved `due_at` in the past) is most urgent — the further past, the
  *        more urgent (largest lateness first);
  *      · then a promise with a SOONER future `due_at`;
@@ -61,15 +76,17 @@ function isActionable(p: Pick<PromiseRecord, 'status'>): boolean {
  *  `urgency` encodes: overdue → large positive (lateness ms); dated-future → negative (−msUntilDue,
  *  so sooner = larger); undated → a fixed sentinel just below any dated-future value.
  */
-export function commitmentKey(task: RankableTask, nowIso: string): [number, number] {
+export function promiseTierKey(
+  promises: readonly Pick<PromiseRecord, 'status' | 'due_at'>[],
+  nowIso: string,
+): [number, number] {
   const now = Date.parse(nowIso);
-  const actionable = task.myPromises.filter(isActionable);
+  const actionable = promises.filter(isActionable);
   if (actionable.length === 0) {
     return [0, 0];
   }
 
   let best = -Infinity;
-  let sawDated = false;
   for (const promise of actionable) {
     if (promise.due_at === null) {
       // Undated commitment: a small finite urgency below any dated one (see UNDATED below).
@@ -81,7 +98,6 @@ export function commitmentKey(task: RankableTask, nowIso: string): [number, numb
       best = Math.max(best, UNDATED_URGENCY);
       continue;
     }
-    sawDated = true;
     const msFromNow = due - now; // negative ⇒ overdue
     // Overdue: lateness is positive and dominates (offset above the dated-future band).
     // Future: sooner (smaller msFromNow) ⇒ larger urgency ⇒ use −msFromNow.
@@ -89,7 +105,6 @@ export function commitmentKey(task: RankableTask, nowIso: string): [number, numb
     best = Math.max(best, urgency);
   }
   // If we only ever saw undated/unparseable promises, `best` is UNDATED_URGENCY; that's fine.
-  void sawDated;
   return [1, best];
 }
 
@@ -111,30 +126,50 @@ export function ageMs(task: RankableTask, nowIso: string): number {
 
 /**
  * The full deterministic sort key for a task, as a tuple compared left→right, each component
- * "higher sorts first": `[hasPromise, commitmentUrgency, importanceWeight, ageMs]`. This is §8
- * steps 1→2→3 in order; step 4 (consequence) is intentionally NOT here.
+ * "higher sorts first": `[hasPromise, commitmentUrgency, hasTheyAsked, theyAskedUrgency,
+ * importanceWeight, ageMs]`. This is PROJECT.md §8 with the D26 second commitment tier inserted
+ * between step 1 (my-promise) and step 2 (importance): my own commitments rank STRICTLY above their
+ * requests, and both rank above sender importance. Step 4 (consequence) is intentionally NOT here.
  */
 export interface RankKey {
+  /** 1 iff an actionable my-promise exists (§8 step 1, top tier). */
   readonly hasPromise: number;
+  /** Most-urgent my-promise deadline urgency (see {@link promiseTierKey}). */
   readonly commitmentUrgency: number;
+  /** 1 iff an actionable they-asked promise exists (D26 second tier). */
+  readonly hasTheyAsked: number;
+  /** Most-urgent they-asked deadline urgency (see {@link promiseTierKey}). */
+  readonly theyAskedUrgency: number;
+  /** Sender/task importance weight (§8 step 2). */
   readonly importanceWeight: number;
+  /** Age since last activity (§8 step 3); larger = older = ranks first. */
   readonly ageMs: number;
 }
 
 export function rankKey(task: RankableTask, nowIso: string): RankKey {
-  const [hasPromise, commitmentUrgency] = commitmentKey(task, nowIso);
+  const [hasPromise, commitmentUrgency] = promiseTierKey(task.myPromises, nowIso);
+  const [hasTheyAsked, theyAskedUrgency] = promiseTierKey(task.theyAsked, nowIso);
   return {
     hasPromise,
     commitmentUrgency,
+    hasTheyAsked,
+    theyAskedUrgency,
     importanceWeight: IMPORTANCE_WEIGHT[task.importance],
     ageMs: ageMs(task, nowIso),
   };
 }
 
-/** Compare two rank keys. Returns <0 if `a` should sort BEFORE `b` (a is higher priority). */
+/**
+ * Compare two rank keys. Returns <0 if `a` should sort BEFORE `b` (a is higher priority). The band
+ * order is §8 + D26: my-promise (has → urgency) → they-asked (has → urgency) → importance → age.
+ * Because `hasPromise` is compared FIRST, an UNDATED my-promise task always beats even an OVERDUE
+ * they-asked task — my commitments are strictly above their requests (D26's load-bearing invariant).
+ */
 export function compareRankKeys(a: RankKey, b: RankKey): number {
   if (a.hasPromise !== b.hasPromise) return b.hasPromise - a.hasPromise;
   if (a.commitmentUrgency !== b.commitmentUrgency) return b.commitmentUrgency - a.commitmentUrgency;
+  if (a.hasTheyAsked !== b.hasTheyAsked) return b.hasTheyAsked - a.hasTheyAsked;
+  if (a.theyAskedUrgency !== b.theyAskedUrgency) return b.theyAskedUrgency - a.theyAskedUrgency;
   if (a.importanceWeight !== b.importanceWeight) return b.importanceWeight - a.importanceWeight;
   if (a.ageMs !== b.ageMs) return b.ageMs - a.ageMs;
   return 0;
