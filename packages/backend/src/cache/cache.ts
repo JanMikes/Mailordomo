@@ -224,7 +224,13 @@ export class MessageCache {
     }
   }
 
-  /** Insert or update a message by its (folder, uid) key, keeping the FTS row in lockstep. */
+  /**
+   * Insert or update a message by its (folder, uid) key, keeping the FTS row in lockstep.
+   *
+   * This is the FULL-MESSAGE path: callers must pass the complete envelope. A CONDSTORE flags-only
+   * delta must NOT come through here (its null envelope would overwrite the stored one) — use
+   * {@link updateFlags} for that.
+   */
   upsertMessage(input: UpsertMessageInput): number {
     const tx = this.db.transaction((): number => {
       const result = this.db
@@ -281,6 +287,19 @@ export class MessageCache {
       return rowid;
     });
     return tx();
+  }
+
+  /**
+   * Update ONLY the flags of an already-cached message (the CONDSTORE flag-delta path). It does NOT
+   * touch the immutable envelope columns or the FTS row: a flag toggle (reading/starring a message
+   * in another client bumps its modseq) must update flags WITHOUT erasing the subject/message-id/
+   * sender/date that the cheap delta fetch doesn't carry. No-op if the (folder, uid) isn't cached
+   * yet — new messages are stored in full via {@link upsertMessage} before any flag delta applies.
+   */
+  updateFlags(folderId: number, uid: number, flags: readonly string[]): void {
+    this.db
+      .prepare('UPDATE messages SET flags_json = ? WHERE folder_id = ? AND uid = ?')
+      .run(JSON.stringify(flags), folderId, uid);
   }
 
   /** Record an attachment by content hash (paths only, never bytes). Deduped per (message, hash). */

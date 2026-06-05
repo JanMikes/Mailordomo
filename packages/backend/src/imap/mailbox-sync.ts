@@ -129,13 +129,32 @@ export class MailboxSync {
       fetched += await this.fetchAndStore(folderId, plan.fetchNewRange, NEW_MESSAGE_QUERY);
     }
     if (plan.changedSince) {
-      // Flag/state deltas only — cheap CONDSTORE re-read of already-known messages.
-      fetched += await this.fetchAndStore(folderId, '1:*', {
-        flags: true,
-        changedSince: BigInt(plan.changedSince),
-      });
+      // Flag/state deltas only — cheap CONDSTORE re-read of already-known messages. Routed through
+      // updateFlags (NOT the full upsert) so a flags-only fetch can't wipe the immutable envelope
+      // (subject/message-id/sender/date) it doesn't carry. New messages were already stored in full
+      // by the fetchNewRange pass above, so every changed UID is already cached.
+      fetched += await this.applyFlagDeltas(folderId, BigInt(plan.changedSince));
     }
     return fetched;
+  }
+
+  /**
+   * Apply a CONDSTORE flag/state delta: re-read flags for messages changed since `modseq` and update
+   * ONLY their flags. Advances the modseq cursor, not the UID cursor (no new UIDs are introduced
+   * here — those come via fetchNewRange).
+   */
+  private async applyFlagDeltas(folderId: number, changedSince: bigint): Promise<number> {
+    let count = 0;
+    let maxModseq: bigint | undefined;
+    for await (const message of this.client.fetchByUid('1:*', { flags: true, changedSince })) {
+      this.cache.updateFlags(folderId, message.uid, [...message.flags]);
+      count += 1;
+      maxModseq = maxBigint(maxModseq, message.modseq);
+    }
+    if (maxModseq !== undefined) {
+      this.cache.setSyncCursor(folderId, 0, maxModseq.toString());
+    }
+    return count;
   }
 
   private async fetchAndStore(
