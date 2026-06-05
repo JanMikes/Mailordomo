@@ -9,4 +9,6 @@ export * from './app';
 export * from './wiring';
 export * from './threads-view';
 export * from './today-view';
+export * from './thread-detail-view';
+export * from './draft-tone';
 export * from './ws';

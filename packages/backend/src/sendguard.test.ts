@@ -60,6 +60,44 @@ describe('structural no-send guard (Golden rule #1 / PLAN.md §4.6)', () => {
     expect(result.errorCount).toBeGreaterThan(0);
   });
 
+  // Phase 7b (D31): the manual send endpoint lives in `api/app.ts`, which imports `smtp/send`, so the
+  // whole `api/` subtree — and the root barrel that re-exports it — is now a TRANSITIVE route to the
+  // transmit code. The specifier-based SMTP guard cannot see that; these prove the api/barrel guard does.
+  it('FAILS when daemon code imports the HTTP api layer (transitive smtp via api/app)', async () => {
+    const result = await lintAsFile(
+      DAEMON_FILE,
+      `import { createBackendApi } from '../api/app';\nexport const x = createBackendApi;\n`,
+    );
+    expect(guardViolations(result).length).toBeGreaterThan(0);
+    expect(result.errorCount).toBeGreaterThan(0);
+  });
+
+  it('FAILS when daemon code imports the api barrel (transitive smtp)', async () => {
+    const result = await lintAsFile(
+      DAEMON_FILE,
+      `import * as api from '../api';\nexport const x = api;\n`,
+    );
+    expect(guardViolations(result).length).toBeGreaterThan(0);
+    expect(result.errorCount).toBeGreaterThan(0);
+  });
+
+  it('FAILS when daemon code imports the backend root barrel by self-name (transitive smtp)', async () => {
+    const result = await lintAsFile(
+      DAEMON_FILE,
+      `import { createBackendApi } from '@mailordomo/backend';\nexport const x = createBackendApi;\n`,
+    );
+    expect(guardViolations(result).length).toBeGreaterThan(0);
+    expect(result.errorCount).toBeGreaterThan(0);
+  });
+
+  it('ALLOWS the daemon to import a sibling engine module directly (guard is not over-broad)', async () => {
+    const result = await lintAsFile(
+      'packages/backend/src/daemon/__guard_fixture_ok3__.ts',
+      `import { buildThreads } from '../threading';\nexport const x = buildThreads;\n`,
+    );
+    expect(guardViolations(result).length).toBe(0);
+  });
+
   it('FAILS when the SMTP module statically imports the daemon', async () => {
     const result = await lintAsFile(
       SMTP_FILE,

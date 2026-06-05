@@ -42,12 +42,33 @@ const DAEMON_PATTERNS = [
   '@mailordomo/backend/daemon/*',
 ];
 
+// Import-source patterns reaching the HTTP api layer + the backend root barrel. `api/app.ts` imports
+// `smtp/send` (the manual send endpoint — the ONLY sanctioned send path — lives there), so the api
+// layer is a TRANSITIVE route to the transmit code, as is the root barrel (it re-exports `./api`). The
+// daemon and the learning engine import their specific deps (claude, cache, metadata-client, engines)
+// DIRECTLY and have no reason to touch the HTTP layer — so the whole `api/` subtree and the self-name
+// barrel are forbidden to them, closing the transitive `barrel → api → smtp` hole that the
+// specifier-based SMTP guard cannot see. (PLAN.md §4.6 / D31)
+const API_BARREL_PATTERNS = [
+  '../api',
+  '../api/**',
+  '../../api',
+  '../../api/**',
+  '@mailordomo/backend/api',
+  '@mailordomo/backend/api/*',
+  '@mailordomo/backend',
+];
+
 const NO_SEND_FROM_DAEMON =
   'Golden rule #1: the daemon must never import the SMTP send path (static, dynamic, or via barrel). Sending is ALWAYS manual. (PLAN.md §4.6)';
 const NO_DAEMON_FROM_SMTP =
   'Golden rule #1: the SMTP send path must never import the daemon. Keep the modules separate. (PLAN.md §4.6)';
 const NO_SEND_FROM_LEARNING =
   'Golden rule #1: silent learning must never import the SMTP send path (static, dynamic, or via barrel). Learning runs after a send and only edits tone memory — it can never transmit. (PLAN.md §4.6 / Phase 6)';
+const NO_API_FROM_DAEMON =
+  'Golden rule #1: the daemon must never import the HTTP api layer or the backend root barrel — both transitively reach the SMTP send path (api/app → smtp/send). Import the specific engine/claude/cache/metadata module directly. Sending is ALWAYS manual. (PLAN.md §4.6 / D31)';
+const NO_API_FROM_LEARNING =
+  'Golden rule #1: silent learning must never import the HTTP api layer or the backend root barrel — both transitively reach the SMTP send path (api/app → smtp/send). Learning only edits tone memory; it can never transmit. (PLAN.md §4.6 / D31)';
 
 export default tseslint.config(
   {
@@ -85,7 +106,12 @@ export default tseslint.config(
     rules: {
       'no-restricted-imports': [
         'error',
-        { patterns: [{ group: SMTP_PATTERNS, message: NO_SEND_FROM_DAEMON }] },
+        {
+          patterns: [
+            { group: SMTP_PATTERNS, message: NO_SEND_FROM_DAEMON },
+            { group: API_BARREL_PATTERNS, message: NO_API_FROM_DAEMON },
+          ],
+        },
       ],
       'no-restricted-syntax': [
         'error',
@@ -108,7 +134,12 @@ export default tseslint.config(
     rules: {
       'no-restricted-imports': [
         'error',
-        { patterns: [{ group: SMTP_PATTERNS, message: NO_SEND_FROM_LEARNING }] },
+        {
+          patterns: [
+            { group: SMTP_PATTERNS, message: NO_SEND_FROM_LEARNING },
+            { group: API_BARREL_PATTERNS, message: NO_API_FROM_LEARNING },
+          ],
+        },
       ],
       'no-restricted-syntax': [
         'error',

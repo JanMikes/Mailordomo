@@ -21,6 +21,8 @@
  *  - `summarize`     — Sonnet thread summary.
  *  - `extract-promises` (+ `promise-extraction-schema`) — Haiku promise candidates → reconciler.
  *  - `nudge`         — the OPUS overdue-nudge auto-draft (saveDraft-only; never sends).
+ *  - `draft`         — the OPUS on-signal reply drafter + the replay-based refine chat (text only;
+ *                      no `smtp/**` import — the caller persists the body locally and sends manually).
  */
 export * from './types';
 export * from './build-args';
@@ -37,3 +39,4 @@ export * from './summarize';
 export * from './promise-extraction-schema';
 export * from './extract-promises';
 export * from './nudge';
+export * from './draft';

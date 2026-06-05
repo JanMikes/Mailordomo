@@ -14,8 +14,15 @@ import type { Server } from 'node:http';
 import { serve } from '@hono/node-server';
 import type { WsMessage } from '@mailordomo/shared';
 import { MessageCache } from '../cache';
+import { RealClaudeRunner } from '../claude';
+import { createFileDraftStore, resolveDraftsDbPath } from '../drafts';
+import { LearningLog, resolveLearningDir } from '../learning';
 import { MetadataClient } from '../metadata-client';
 import { createFileSettingsStore, resolveSettingsFilePath } from '../settings';
+import { createNodemailerComposer } from '../smtp/nodemailer';
+import type { SendDeps } from '../smtp/send';
+import { createStubMailTransport } from '../smtp/stub-transport';
+import { ToneStore, resolveToneDir } from '../tone';
 import { createBackendApi } from './app';
 import { createTodayWsServer, WS_PATH } from './ws';
 import type { TodayWsServer } from './ws';
@@ -61,6 +68,21 @@ function main(): void {
   });
   const settingsStore = createFileSettingsStore(env.settingsFilePath);
 
+  // Phase 7b work-surface deps. All are LOCAL (no creds needed yet): the Claude runner (draft/refine
+  // Opus + pinned summary Sonnet), the LOCAL-only draft store (never synced), layered tone memory,
+  // the learning changelog (revert snapshots), and the send path — with a STUB transport (D30; Phase
+  // 8 swaps in real nodemailer + creds). The composer is real (in-process MIME compose, no network).
+  // These resolvers read their OWN env vars (MAILORDOMO_CONFIG_DIR / TONE_DIR / LEARNING_DIR) from
+  // process.env — not the already-parsed BackendEnv — so call them with the process environment.
+  const runner = new RealClaudeRunner();
+  const draftStore = createFileDraftStore(resolveDraftsDbPath(process.env));
+  const toneStore = ToneStore.open({ dir: resolveToneDir(process.env), projectId: env.projectId });
+  const learningLog = LearningLog.open({ dir: resolveLearningDir(process.env) });
+  const sendDeps: SendDeps = {
+    composer: createNodemailerComposer(),
+    transport: createStubMailTransport(),
+  };
+
   // The WS server can only be built AFTER `serve()` hands back the HTTP server, but the API needs a
   // `broadcast` now — so route through a stable closure that delegates to the (later) WS server, held
   // in a const box (the box is const; its slot is filled once the socket exists).
@@ -69,7 +91,18 @@ function main(): void {
     ws.server?.broadcast(msg);
   };
 
-  const app = createBackendApi({ metadata, cache, settingsStore, broadcast, actor: env.actor });
+  const app = createBackendApi({
+    metadata,
+    cache,
+    settingsStore,
+    broadcast,
+    actor: env.actor,
+    runner,
+    draftStore,
+    toneStore,
+    learningLog,
+    sendDeps,
+  });
   const server = serve({ fetch: app.fetch, port: env.port, hostname: env.host }, (info) => {
     console.log(
       `mailordomo-backend api listening on http://${env.host}:${info.port} (ws ${WS_PATH})`,

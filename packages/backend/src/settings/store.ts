@@ -27,13 +27,21 @@ export interface SettingsStore {
 export const SETTINGS_FILE_NAME = 'settings.json';
 
 /**
+ * Resolve the LOCAL app config directory: `$MAILORDOMO_CONFIG_DIR` (default `~/.mailordomo/`). The
+ * single home for machine-local app config — the settings file lives here, and so does the
+ * local-only `drafts.db` (Phase 7b, D31), kept SEPARATE from the disposable message cache.
+ */
+export function resolveConfigDir(env: NodeJS.ProcessEnv = process.env): string {
+  const configured = env['MAILORDOMO_CONFIG_DIR']?.trim();
+  return configured && configured.length > 0 ? configured : join(homedir(), '.mailordomo');
+}
+
+/**
  * Resolve the settings.json path from `$MAILORDOMO_CONFIG_DIR` (default `~/.mailordomo/`). The
  * runnable entry calls this; tests pass an explicit temp path to {@link createFileSettingsStore}.
  */
 export function resolveSettingsFilePath(env: NodeJS.ProcessEnv = process.env): string {
-  const configured = env['MAILORDOMO_CONFIG_DIR']?.trim();
-  const dir = configured && configured.length > 0 ? configured : join(homedir(), '.mailordomo');
-  return join(dir, SETTINGS_FILE_NAME);
+  return join(resolveConfigDir(env), SETTINGS_FILE_NAME);
 }
 
 /** A file-backed {@link SettingsStore} at `filePath` (the full path to settings.json). */
