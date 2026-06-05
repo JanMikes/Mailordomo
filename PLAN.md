@@ -99,6 +99,7 @@ Root `package.json`:
     "test":      "npm run test --workspaces --if-present",        // vitest run
     "build":     "npm run build --workspaces --if-present",       // tsc build / vite build / server bundle
     "verify":    "npm run typecheck && npm run lint && npm run test && npm run build",
+    "refresh-fixtures": "node scripts/refresh-fixtures.mjs",      // regenerate recorded LLM fixtures (live calls)
     "prepare":   "husky"
   }
 }
@@ -165,6 +166,42 @@ Every phase is done only when **all** are checked:
       `--no-verify`).
 - [ ] `main` is buildable at the phase boundary.
 - [ ] §10 progress log updated (checkboxes, decisions, deferrals).
+- [ ] **`PROGRESS.md`** session entry appended (did / half-done / next / surprises) and committed
+      with the code (see §4.7).
+
+### 4.6 Structural no-autonomous-send guard (defense in depth)
+
+Golden rule #1 (sending is always manual) is enforced **structurally**, not just by tests:
+
+- The **daemon** (`backend/src/daemon/`) and the **send path** (`backend/src/smtp/send`) live in
+  **separate modules with no import path between them.** The daemon can *draft* (write a draft via
+  the metadata/cache layer) but has no reference to anything that can transmit over SMTP.
+- An **ESLint `no-restricted-imports`/`no-restricted-paths` rule** forbids any import from
+  `daemon/**` into the send module (and vice-versa). A violation **fails `lint` → fails the
+  pre-commit/pre-push gate immediately**, before tests even run.
+- This is **established in Phase 0** (rule + a fixture test proving the rule trips on a deliberate
+  violating import) and **kept alongside** the behavioral tests in Phases 5 and 9 (assert no send
+  path is reachable from the daemon). Structure blocks the mistake; tests prove the behavior.
+
+### 4.7 Session journaling — `PROGRESS.md`
+
+A running **session journal**, committed **with the code at the end of every work session** (not
+only at phase boundaries):
+
+- Append a dated entry: **What I did · What's half-done · Next · Surprises/decisions.**
+- Purpose: continuity across context resets and visibility into a long autonomous run. It
+  complements §10 (phase checklist) and §9 (decisions) at a finer, per-session grain.
+- `PROGRESS.md` is created in Phase 0 and updated every session thereafter.
+
+### 4.8 Recorded LLM fixtures are deliberately-regenerated artifacts
+
+- Recorded `claude` outputs used in tests live under `**/__fixtures__/llm/` and each carries a
+  header/sidecar marking it a **deliberately-regenerated artifact** (model alias, prompt hash,
+  date captured, `// GENERATED — do not hand-edit; run \`npm run refresh-fixtures\``).
+- **`npm run refresh-fixtures`** re-captures them with **live** `claude` calls (the only place
+  live calls happen). Tests/CI **never** call live; they replay these files.
+- Regeneration is an explicit, reviewable act — a fixture diff in a PR signals "model output
+  shifted," not a silent test change.
 
 ---
 
@@ -180,7 +217,8 @@ Every phase is done only when **all** are checked:
   `claude -p`; the **fake** returns canned `structured_output`. Engines consume *structured
   results*, so they test deterministically. A handful of **recorded real `claude` outputs** are
   checked in as fixtures for golden cases (extraction, triage) — captured once, replayed in CI;
-  no live API calls in tests.
+  no live API calls in tests. Fixtures are managed as deliberately-regenerated artifacts per
+  §4.8 (`npm run refresh-fixtures`).
 - **Transport tests:** the IMAP sync delta logic and folder mapping test against a **fake IMAP**
   surface / recorded fixtures (no live mailbox in CI). Threading (JWZ) tests against crafted
   header sets including malformed/missing references.
@@ -215,12 +253,15 @@ Every phase is done only when **all** are checked:
 ### Phase 0 — Scaffold + quality gates + docs *(do this first; it makes every later phase gated)*
 - **Goal:** a buildable empty monorepo with the full quality gate live.
 - **Deliverables:** npm workspaces; `tsconfig.base.json` (strict); ESLint flat + Prettier;
-  Vitest; **husky pre-commit/pre-push**; **root `verify`**; `.nvmrc` (Node 22); `.env.example`;
-  top-level `README.md`; CI workflow skeleton (`verify` job only until Phase 2 adds the image
-  build).
+  Vitest; **husky pre-commit/pre-push**; **root `verify`** (+ `refresh-fixtures` scaffold, §4.8);
+  `.nvmrc` (Node 22); `.env.example`; top-level `README.md`; **`PROGRESS.md`** seeded (§4.7);
+  the **structural no-send guard** ESLint rule + module-boundary skeleton (§4.6); CI workflow
+  skeleton (`verify` job only until Phase 2 adds the image build).
 - **Tests:** a trivial smoke test per package so `verify` exercises the whole pipeline; a test
-  proving the pre-commit hook **fails** on a deliberately broken file (gate actually gates).
-- **DoD note:** `verify` green on an essentially empty repo; hooks demonstrably block bad commits.
+  proving the pre-commit hook **fails** on a deliberately broken file (gate actually gates); a
+  fixture proving the **send-guard ESLint rule trips** on a deliberate `daemon → send` import.
+- **DoD note:** `verify` green on an essentially empty repo; hooks demonstrably block bad commits;
+  send-guard rule demonstrably blocks a cross-import.
 
 ### Phase 1 — Shared types & contracts
 - **Goal:** one source of truth for all cross-boundary shapes.
@@ -258,6 +299,11 @@ Every phase is done only when **all** are checked:
   mapper** (state↔folder both directions); JWZ threading on crafted/broken headers; sync delta
   logic against fake IMAP/fixtures. **No live mailbox in CI.**
 - **DoD note:** cache rebuild-from-empty works; no two-way DB sync introduced.
+- **🛑 HUMAN CHECKPOINT (mandatory stop — see §12):** before Phases 4–9 build on the transport
+  layer, **stop** and let the user connect **one real mailbox** and verify, live: **read-only
+  sync** (no writes/sends), **SPECIAL-USE folder resolution**, **JWZ threading** on real
+  messages, and **`uidValidity` handling** (incl. a forced-resync path). Provide a short
+  read-only verification runbook. Resume to Phase 4 only on the user's go-ahead.
 
 ### Phase 4 — Claude job runner + triage + summaries *(parallel workstream; integrates after 3)*
 - **Goal:** the engine that spawns `claude` with fixed routing + editable prompts, plus the first
@@ -272,6 +318,22 @@ Every phase is done only when **all** are checked:
   `structured_output` handling; triage→state mapping (**fake runner**); recorded-fixture golden
   cases.
 - **DoD note:** verify `--bare` behavior for the daemon (open question #9).
+
+### Phase 4.5 — First integration milestone (backend ↔ server ↔ frontend) *(named)*
+- **Goal:** prove the three layers actually wire together end-to-end before more features stack on
+  top — the first time real data flows across all boundaries.
+- **Deliverables:** a minimal but **real** vertical slice: backend connects to the metadata
+  service with a project token; cached threads (from Phase 3) surface their metadata to the
+  service and back; a **real cache rebuild-from-empty** runs end-to-end (delete cache → rebuild
+  from IMAP fixtures + metadata API) and the app comes back consistent; a **lock set on one
+  backend instance is visible to a second instance** via the metadata service (the Jan/Simona
+  presence primitive); a thin "health/wiring" screen or endpoint shows all three layers green.
+- **Tests:** end-to-end cache rebuild assertion; **cross-instance lock visibility** (instance A
+  locks → instance B sees `locked_by`/`expires_at`; timeout releases); metadata round-trip across
+  the real client (not the fake).
+- **DoD:** the §4.5 template **plus**: (a) cache rebuild-from-empty verified end-to-end; (b)
+  cross-instance lock visibility demonstrated by an automated test; (c) no body data crosses to
+  the server (privacy assertion); (d) `verify` green with the real metadata client in the loop.
 
 ### Phase 5 — 3-way promises + ranking + stale detection + overdue-nudge
 - **Goal:** the load-bearing commitment tracker and the do-next queue.
@@ -293,17 +355,28 @@ Every phase is done only when **all** are checked:
 - **Tests:** layer resolution/override precedence; changelog apply/**revert**; LWW conflict
   resolution; "learning never auto-sends / never edits a sent message" guard.
 
-### Phase 7 — Frontend
-- **Goal:** the polished command center + work surface + fallback.
-- **Deliverables (Vite + React + Tailwind + shadcn/ui + Lucide):** **Today** command center
-  (3-way metric cards, done-vs-remaining, ranked do-next cards w/ badges & inline actions);
-  **All-projects** + **per-project** (grouped by state); **classic 3-pane fallback** toggle;
-  **split work surface** (thread + pinned summary + repo-freshness left; draft + refine-chat with
-  pinned instruction textarea, model badge, **Send as primary** right); **REST + WebSocket** to
-  backend (live mail/daemon/lock-presence/draft-ready), React Query; light/dark; sentence case.
-- **Tests:** thin component/interaction tests for the load-bearing flows (do-next card actions,
-  draft→refine→send-as primary action wiring, view toggle); recreate the two reference mockups'
-  structure.
+### Phase 7 — Frontend *(split into 7a/7b/7c for smaller, reviewable diffs)*
+Shared foundation established in 7a and reused by 7b/7c: Vite + React + Tailwind + shadcn/ui +
+Lucide, **REST + WebSocket** client to the backend, React Query, light/dark, sentence case.
+
+- **Phase 7a — Today command center + do-next cards**
+  - **Deliverables:** app shell + theming + data layer (REST/WS + React Query); the **Today**
+    view: 3-way promise metric cards, done-vs-remaining counts, ranked **do-next task cards**
+    (state badge, project, deadline, draft-ready indicator, inline actions).
+  - **Tests:** do-next card actions; metric cards reflect metadata; live-update wiring.
+  - **DoD:** §4.5 template; recreates the *Today* reference mockup's structure.
+- **Phase 7b — Split work surface + refine chat**
+  - **Deliverables:** the split work surface — thread + **pinned Claude summary** + repo-freshness
+    left; **draft + refine-chat** right (model badge, **Send as primary action**, edit/snooze
+    beside it, **instruction textarea pinned at bottom**, history replayed per golden rule #5).
+  - **Tests:** draft → refine → (Send as primary) action wiring; instruction-textarea round-trip;
+    summary pinning.
+  - **DoD:** §4.5 template; recreates the *split thread+draft+refine* reference mockup's structure.
+- **Phase 7c — Classic 3-pane fallback + project views**
+  - **Deliverables:** **All-projects** + **per-project** (threads grouped by state); the
+    **classic 3-pane fallback** toggle so the user is never trapped in the opinionated view.
+  - **Tests:** view toggle; per-project grouping by state; fallback never loses access to a thread.
+  - **DoD:** §4.5 template.
 
 ### Phase 8 — Setup wizard + repo pointers + credentials
 - **Goal:** guided onboarding without trapping a dev.
@@ -414,6 +487,20 @@ Every phase is done only when **all** are checked:
   files** only; **bodies and draft content never leave** the machine.
 - **D8** Pure **engines** (state machine, 3-way reconciler, ranker, folder mapper) isolated from
   IO for testability.
+- **D9** *(refinement)* **Structural no-send guard**: daemon and send path are separate modules
+  with an **ESLint import-boundary rule** forbidding any path between them; established Phase 0,
+  behavioral tests kept in Phases 5/9.
+- **D10** *(refinement)* **`PROGRESS.md` session journal** committed with code at the end of every
+  session (did / half-done / next / surprises); added to the per-phase DoD.
+- **D11** *(refinement)* **Mandatory human checkpoint after Phase 3** for live one-mailbox
+  read-only verification; the single exception to "no further stops."
+- **D12** *(refinement)* **Recorded LLM fixtures** are deliberately-regenerated artifacts under
+  `__fixtures__/llm/`, regenerated only via **`npm run refresh-fixtures`** (the sole live-call
+  path); tests always replay.
+- **D13** *(refinement)* **Named integration milestone Phase 4.5** owns first real
+  backend↔server↔frontend wiring (end-to-end cache rebuild + cross-instance lock visibility).
+- **D14** *(refinement)* **Phase 7 split** into 7a (Today + do-next), 7b (split work surface +
+  refine), 7c (3-pane + project views) for smaller reviewable diffs.
 
 ---
 
@@ -422,17 +509,23 @@ Every phase is done only when **all** are checked:
 *(Update as you build. Phase boxes use the §4.5 DoD. Add a "Phase N review" note from the phase
 reviewer before moving on.)*
 
-- [x] **Planning** — `PROJECT.md` + `PLAN.md` authored and committed. **← awaiting approval.**
-- [ ] **Phase 0** — scaffold + quality gates + docs
+- [x] **Planning** — `PROJECT.md` + `PLAN.md` authored, committed, **approved with refinements**.
+- [ ] **Phase 0** — scaffold + quality gates (incl. structural send guard) + `PROGRESS.md` + docs
 - [ ] **Phase 1** — shared types & contracts
 - [ ] **Phase 2** — metadata service (+ Docker + GHCR)
 - [ ] **Phase 3** — transport + cache + state machine + folder mirroring
+- [ ] **🛑 Phase 3 HUMAN CHECKPOINT** — live one-mailbox read-only verification (mandatory stop)
 - [ ] **Phase 4** — Claude job runner + triage + summaries
+- [ ] **Phase 4.5** — first integration milestone (backend↔server↔frontend; rebuild + lock visibility)
 - [ ] **Phase 5** — 3-way promises + ranking + stale + overdue-nudge
 - [ ] **Phase 6** — tone memory + learning + sync
-- [ ] **Phase 7** — frontend
+- [ ] **Phase 7a** — Today + do-next cards
+- [ ] **Phase 7b** — split work surface + refine chat
+- [ ] **Phase 7c** — 3-pane fallback + project views
 - [ ] **Phase 8** — setup wizard + repo pointers + credentials
 - [ ] **Phase 9** — digest + E2E + polish + launchd + docs
+
+> Per-session notes live in `PROGRESS.md` (§4.7); per-phase reviewer notes are appended here.
 
 ---
 
@@ -454,7 +547,12 @@ reviewer before moving on.)*
 
 ## 12. Checkpoints (explicit stops)
 
-- **CHECKPOINT 0 (now):** `PROJECT.md` + `PLAN.md` committed → **STOP, await approval.** ← we are here.
-- After approval: build Phases 0→9 autonomously, keeping `main` buildable at every boundary,
-  updating §10 as each phase's DoD is met. No further mandatory stops unless a golden-rule
-  conflict or a high-stakes ambiguity arises (then record it here and ask).
+- **CHECKPOINT 0:** `PROJECT.md` + `PLAN.md` committed → **approved with refinements.** ✅ done.
+- **CHECKPOINT 1 — after Phase 3 (the single mid-build stop):** before Phases 4–9 build on the
+  transport layer, **STOP** and let the user connect **one real mailbox** and verify live
+  read-only sync, SPECIAL-USE folder resolution, JWZ threading on real messages, and
+  `uidValidity` handling. Resume only on the user's go-ahead. *(This is the one sanctioned
+  exception to "no further stops.")*
+- Otherwise: build Phases 0→9 autonomously, keeping `main` buildable at every boundary, updating
+  §10 + `PROGRESS.md` as each DoD is met. The only other stop is a **golden-rule conflict** or a
+  **high-stakes ambiguity** (record it here and ask).

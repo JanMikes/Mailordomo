@@ -1,9 +1,9 @@
 # PROJECT.md — Mailordomo
 
 > **Status:** Authoritative specification. This is the durable "what and why."
-> `PLAN.md` is the "how and when" (phases, tooling, progress). `CLAUDE.md` is the standing
-> operating manual for Claude Code. If any two conflict, **PROJECT.md wins** and the other
-> should be corrected.
+> `PLAN.md` is the "how and when" (phases, tooling, progress); `PROGRESS.md` is the per-session
+> journal; `CLAUDE.md` is the standing operating manual for Claude Code. If any two conflict,
+> **PROJECT.md wins** and the other should be corrected.
 >
 > Renamed from the brief's working title "Postino" → **Mailordomo** (already the directory and
 > `CLAUDE.md` name). See [§13](#13-gaps-and-decisions) for naming.
@@ -264,7 +264,10 @@ needs-reply ──▶ drafted ──▶ waiting ──▶ follow-up(+deadline) �
 - **Drafting is on-signal** for v1: the user opens a thread and clicks draft, with an optional
   **instruction textarea** ("context for Claude") — the reusable primitive that appears at draft
   time and in the refine chat. Designed so eagerness can be dialed up later without a rewrite.
-- **Sending is ALWAYS manual.** The user edits a draft directly or refines it by chatting.
+- **Sending is ALWAYS manual.** The user edits a draft directly or refines it by chatting. This is
+  enforced **structurally**: the daemon and the SMTP send path are separate modules with **no
+  import path between them**, guarded by an ESLint import-boundary rule (the lint gate blocks a
+  violation), in addition to behavioral tests.
 - **Organizing / moving** may be **autonomous but proposed-with-undo**, and **fully logged**.
 - **Continuous learning is silent + logged + revertable:** Claude updates tone-memory markdown
   from (a) recurring draft instructions and (b) the **diff between its draft and what the user
