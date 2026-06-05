@@ -724,6 +724,28 @@ Lucide, **REST + WebSocket** client to the backend, React Query, light/dark, sen
   - **Shared additions are owned by the backend implementer** (avoid races): body-free `ThreadDetailSchema`
     + `ThreadMessageMetaSchema`; **draft body / `RefineTurn` stay LOCAL types** (not server-bound DTOs). No
     new WS message type — reuse `today:changed` + React Query invalidation.
+- **D32** *(Phase 7c scope — orchestrator; resolves the all-projects/per-project ambiguity for single-project
+  v1)* The local app is **single-project in v1** (one `METADATA_PROJECT_ID`; D21/D29 — the metadata client is
+  project-scoped, all threads belong to the paired project; the seed is one project / one mailbox). PROJECT.md
+  §11's **all-projects + per-project** views are built around this reality **but structured to generalize to N**:
+  a **"Projects" board** lists each project (one in v1) with its threads **grouped by task state**
+  (needs-reply→drafted→waiting→follow-up→done) — serving as both "all-projects" (every project section) and
+  "per-project" (each project a selectable section). Decisions:
+  - **Project NAME** (closes the 7a→7c deferral): resolved server-side from `pair()` → `AuthedProject.name`,
+    **cached** (rarely changes); surfaced as an optional `projectName` on `DoNextCard` + the projects-board items
+    + `ThreadDetail`, and via `GET /api/project`. Cards stop showing the raw id.
+  - **Projects board**: a new **pure, body-free** assembler (reusing the today-view threads+tasks join) →
+    `GET /api/projects-board`: `{ projects: [{ projectId, projectName, groups: { <state>: ThreadCard[] } }] }`
+    (subject/snippet/sender + state metadata only).
+  - **Classic 3-pane fallback** (the never-trap escape hatch): left list (states/projects) | middle thread list |
+    right reading pane (reuses the 7b `ThreadDetail` + local `.eml` body hop). A **persisted `defaultView`**
+    (`'today' | 'three-pane'`) on `AppSettings` (local settings store, NOT localStorage — like `colorScheme`) so
+    the user can make the classic view their landing surface; default `'today'`.
+  - **Frontend**: the app-shell's already-present disabled "All projects" + "3-pane" nav items go **live**
+    (NavController views); both new views open threads via the existing 7b work surface, so no thread is ever
+    unreachable.
+  - **No new project SETUP** (multi-project config / the wizard) — that is Phase 8. 7c renders what the single
+    configured project exposes.
 
 ---
 
