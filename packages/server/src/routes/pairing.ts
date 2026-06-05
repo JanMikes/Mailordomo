@@ -3,6 +3,9 @@
  * hashes the token and constant-time compares it to the stored `token_hash`. On success it echoes
  * the client-safe project (identity only, never the hash). This endpoint is mounted BEFORE the
  * bearer-auth middleware (it is the credential check itself).
+ *
+ * WARNING: every route in this router is UNAUTHENTICATED (mounted before the bearer guard). Do NOT
+ * add any non-public route here — authenticated routes belong in their own router after the guard.
  */
 import { Hono } from 'hono';
 import type { PairResponse } from '@mailordomo/shared';

@@ -217,31 +217,34 @@ async function run(config: VerifyConfig): Promise<void> {
     console.log(`  exists        : ${mailbox.exists}`);
     console.log(`  highestModseq : ${mailbox.highestModseq?.toString() ?? '(no CONDSTORE)'}`);
 
-    const start = Math.max(1, mailbox.uidNext - config.fetchCount);
-    const range = `${start}:*`;
-    console.log(
-      `\nThreading recent messages (UID ${range}) via Message-ID/In-Reply-To/References:`,
-    );
-
+    // Fetch the last N messages by SEQUENCE number (robust to UID gaps from deletions; a
+    // uidNext-based UID range can hide recent mail on a sparse mailbox). Strictly read-only.
     const collected: CollectedMessage[] = [];
-    for await (const message of client.fetch(
-      range,
-      { uid: true, envelope: true, headers: ['references'] },
-      { uid: true },
-    )) {
-      const envelope = message.envelope;
-      const messageId = envelope?.messageId ?? `<synthetic-uid-${message.uid}>`;
-      const references = parseReferencesHeader(message.headers);
-      const inReplyTo = parseIds(envelope?.inReplyTo ?? null);
-      const chain = references.length > 0 ? references : inReplyTo;
-      const parent = chain.length > 0 ? (chain[chain.length - 1] ?? null) : null;
-      collected.push({
-        id: messageId,
-        subject: envelope?.subject ?? '',
-        from: formatFrom(envelope?.from),
-        date: envelope?.date ? envelope.date.toISOString() : '',
-        parent: parent === messageId ? null : parent,
-      });
+    if (mailbox.exists > 0) {
+      const start = Math.max(1, mailbox.exists - config.fetchCount + 1);
+      const range = `${start}:*`;
+      console.log(
+        `\nThreading the last ${mailbox.exists - start + 1} message(s) (seq ${range}) via Message-ID/In-Reply-To/References:`,
+      );
+      for await (const message of client.fetch(range, {
+        uid: true,
+        envelope: true,
+        headers: ['references'],
+      })) {
+        const envelope = message.envelope;
+        const messageId = envelope?.messageId ?? `<synthetic-uid-${message.uid}>`;
+        const references = parseReferencesHeader(message.headers);
+        const inReplyTo = parseIds(envelope?.inReplyTo ?? null);
+        const chain = references.length > 0 ? references : inReplyTo;
+        const parent = chain.length > 0 ? (chain[chain.length - 1] ?? null) : null;
+        collected.push({
+          id: messageId,
+          subject: envelope?.subject ?? '',
+          from: formatFrom(envelope?.from),
+          date: envelope?.date ? envelope.date.toISOString() : '',
+          parent: parent === messageId ? null : parent,
+        });
+      }
     }
 
     if (collected.length === 0) {

@@ -261,13 +261,17 @@ const toLearning = (r: LearningRow): LearningEntry => ({
   reverted_at: r.reverted_at,
 });
 
-/** Deterministic last-write-wins: newer `updated_at` wins; ties broken by `version_hash` (≥). */
+/**
+ * Deterministic last-write-wins: newer `updated_at` wins; ties broken by `version_hash` (strictly
+ * greater). A re-push of the identical version (same updated_at AND hash) is therefore a no-op
+ * (`accepted: false`) — nothing changed — rather than a redundant rewrite.
+ */
 function toneWriteWins(incoming: ToneFile, existing: ToneFile): boolean {
   const inc = Date.parse(incoming.updated_at);
   const cur = Date.parse(existing.updated_at);
   if (inc > cur) return true;
   if (inc < cur) return false;
-  return incoming.version_hash >= existing.version_hash;
+  return incoming.version_hash > existing.version_hash;
 }
 
 /* -------------------------------- repository ----------------------------------- */
@@ -707,7 +711,9 @@ class SqliteRepository implements Repository {
 
   releaseLock(projectId: string, req: ReleaseLockRequest, now: string): { released: boolean } {
     return this.db.transaction((): { released: boolean } => {
-      if (this.getThread(projectId, req.thread_id) === undefined) return { released: true };
+      // A thread outside the caller's project is not theirs to release — report not-released
+      // (and never reveal whether the thread exists). The lock, if any, is left untouched.
+      if (this.getThread(projectId, req.thread_id) === undefined) return { released: false };
       const existing = this.getLockRow(req.thread_id);
       if (existing === undefined) return { released: true };
       const sameHolder = existing.locked_by === req.locked_by;
