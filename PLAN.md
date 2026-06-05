@@ -654,6 +654,26 @@ Lucide, **REST + WebSocket** client to the backend, React Query, light/dark, sen
   either a **LIFO guard** (refuse reverting anything but the most-recently-applied un-reverted lesson
   for a file) or a **structured-tone rebuild** that respects manual tone edits. Recorded rather than
   baking in a possibly-wrong constraint now (the reviewer's explicit call).
+- **D29** *(Phase 7a, architect blueprint)* **Today command center data path + decisions.** Shared
+  `today.ts` (`TodayReadModel` = `promiseMetrics` 3-way counts + `taskCounts` done/remaining +
+  ranked `doNext: DoNextCard[]`) and `settings.ts` (`AppSettings`) contracts, both strict + **body-free**
+  (cards carry only the sanctioned subject/snippet/sender; the Today model is backend→frontend
+  **local**, never sent to the server). **D26 ranker extension lands here** (the Today endpoint is the
+  first do-next caller): key `[hasMyPromise, myPromiseUrgency, hasTheyAsked, theyAskedUrgency,
+  importance, age]`. **Settings live in a LOCAL backend JSON config** (`$MAILORDOMO_CONFIG_DIR/
+  settings.json`, default `~/.mailordomo/`) read/written via `GET`/`PUT /api/settings` — **not** server
+  state, **not** localStorage-as-truth; stale-days feed `detectStale`, lock-minutes → `ttl_seconds`,
+  and **`colorScheme` (light/dark/system) is an `AppSettings` field** (theme persisted server-of-truth-
+  free, in the local config — resolves an §11 gap). Transport: **REST + WebSocket** on 127.0.0.1 (open
+  Q #28); the WS pushes a lightweight `{type:'today:changed'}` → the client refetches. **Single-project
+  Today** for v1 (the configured `METADATA_PROJECT_ID`); `doNext` capped at 50 (a future setting).
+  **CHECKPOINT-2 finding:** the **daemon loop is still a stub** (no live poll→triage→extract→metadata
+  write — that is Phase 9), so the metadata service is empty on a fresh install; a **`seed:today`** dev
+  script (derived from real cached threads where present + synthetic task/promise overlays) populates it
+  so the user can eyeball the real UI structure. Full live mail flow is Phase 8 (creds/wizard) + 9 (E2E).
+  Inline card actions in 7a are **metadata-only** (mark-done transition, snooze/follow-up); **Draft/Send
+  are deferred to 7b** and rendered as a visible disabled stub — **no send path exists in the 7a API**
+  (golden rule #1).
 
 ---
 
