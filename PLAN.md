@@ -529,6 +529,28 @@ Lucide, **REST + WebSocket** client to the backend, React Query, light/dark, sen
   floor (Golden rule #6) guards all three Opus-tier kinds** — `draft`, `nudge`, **and**
   `repo-answer` (compile-time `OUTGOING_TEXT_MODELS` + runtime `assertOutgoingTextRouting` +
   self-check on import); corrected after review from the implementer's narrower draft/nudge-only set.
+- **D21** *(Phase 2)* **Metadata service** = Hono + `@hono/node-server` over **better-sqlite3 (WAL)
+  behind a `Repository` interface** (SQLite→Postgres swap stays mechanical). Auth = **bearer token +
+  `X-Project-Id` header**; `token_hash = sha256`, **timing-safe** compare; `/health` + `/pair`
+  public, all data routes behind the guard and **project-scoped**. **Locks**: 30-min TTL,
+  same-holder re-acquire = heartbeat, expired = acquirable, different unexpired = 409; release for a
+  thread outside the caller's project returns `released:false` (never reveals existence). **Tone
+  LWW**: newer `updated_at` wins, tie-break **strictly-greater** `version_hash` (identical re-push =
+  no-op). **Plain SQL migrations** idempotent on startup. **Docker** multi-stage (tsup inlines
+  `shared`; better-sqlite3 external) + **GHCR build-and-publish** (needs verify, push-only, no
+  deploy). Privacy is enforced by the shared strict DTOs — **no body column** exists.
+- **D22** *(Phase 3)* **Transport/cache/engines.** Pure engines: state machine interprets the shared
+  `TASK_STATE_TRANSITIONS` table (apply/propose/noop); folder mapper + `resolveSpecialUseFolders`
+  (by SPECIAL-USE flag, never English names). Cache = better-sqlite3 + **FTS5**, keyed by
+  **(mailbox, uidValidity, uid)** + Message-ID index, `.eml`/attachments on disk (content-hash
+  dedup), one-way mirror, rebuild-from-empty. Own **JWZ** threading. IMAP via an **injected
+  `ImapClient` seam** — the read path is **structurally write-free** (a separate `ImapAppendClient`
+  carries APPEND, used only by the send path), so sync can't write to IMAP; **own reconnect**
+  (backoff+jitter, imapflow has none) re-validates `uidValidity`; IDLE hot + poll 5 min; uidValidity
+  change → invalidate + resync. **CONDSTORE flag-deltas route through `updateFlags`, never the full
+  upsert**, so a flag toggle can't null the cached envelope (a real bug the separate test author
+  caught). Send path (nodemailer) is **manual-only** and stubbable. `verify-mailbox` checkpoint
+  script fetches by **sequence number** (robust to UID gaps) and is strictly read-only.
 
 ---
 
@@ -540,9 +562,9 @@ reviewer before moving on.)*
 - [x] **Planning** — `PROJECT.md` + `PLAN.md` authored, committed, **approved with refinements**.
 - [x] **Phase 0** — scaffold + quality gates (incl. structural send guard) + `PROGRESS.md` + docs ✅
 - [x] **Phase 1** — shared types & contracts ✅
-- [ ] **Phase 2** — metadata service (+ Docker + GHCR)
-- [ ] **Phase 3** — transport + cache + state machine + folder mirroring
-- [ ] **🛑 Phase 3 HUMAN CHECKPOINT** — live one-mailbox read-only verification (mandatory stop)
+- [x] **Phase 2** — metadata service (+ Docker + GHCR) ✅
+- [x] **Phase 3** — transport + cache + state machine + folder mirroring ✅
+- [ ] **🛑 Phase 3 HUMAN CHECKPOINT** — live one-mailbox read-only verification (mandatory stop) ← **WE ARE HERE**
 - [ ] **Phase 4** — Claude job runner + triage + summaries
 - [ ] **Phase 4.5** — first integration milestone (backend↔server↔frontend; rebuild + lock visibility)
 - [ ] **Phase 5** — 3-way promises + ranking + stale + overdue-nudge
@@ -620,6 +642,46 @@ surface (29 strict contracts × every forbidden key). Golden rule #3 is enforced
 **Deferred / noted:** `subject` is unbounded (a sanctioned shared field; a cap is an open product
 question, not a contract violation); transition *legality* is enforced by the Phase 3 state machine,
 not the wire DTO (intentional separation). Branded ID types deferred as an additive enhancement.
+
+### Phase 2 review (independent reviewer, fresh context) — metadata service
+
+**Verdict:** PASS-WITH-CONCERNS → concerns fixed. **`verify` green; server 211 tests** (210 by a
+separate test-author, 3 mutation-checked). Built in parallel with Phase 3 (file-disjoint packages).
+
+**Adversarial auth/privacy/scoping probe came back CLEAN (the key result):** bearer compare is
+timing-safe (length-guarded `crypto.timingSafeEqual`), `token_hash` is sha256 (never plaintext),
+**every** data route is behind the auth middleware (health/pair registered before it), **project A
+cannot read/modify project B's rows** on any endpoint (all repo reads join on project), there is
+**no body column** (only sanctioned `notes.body`/`tone_files.content`), every write parses through a
+**strict** shared DTO, lock ops are transactional (better-sqlite3 is synchronous), expiry compares
+are UTC-normalized, migrations idempotent, and the only write-on-read is the tone LWW arbitration
+(no two-way sync).
+
+**Fixed:** `releaseLock` for a foreign-project thread now returns `released:false` (was a misleading
+`true`; the lock was never actually freed); tone tie-break is strictly-greater (identical re-push =
+no-op); pairing router documented as intentionally unauthenticated.
+**Deferred:** PATCH/learning cross-project *scoping tests* (impl confirmed correct by the probe, just
+coverage gaps); Docker hand-enumerates better-sqlite3's runtime closure (fragile on version bump).
+
+### Phase 3 review (independent reviewer, fresh context) — transport/cache/engines
+
+**Verdict:** PASS-WITH-CONCERNS → concerns fixed. **`verify` green; backend 122 tests** (by a
+separate test-author, which found the flag-delta bug). **Checkpoint-ready.**
+
+**READ-ONLY SAFETY confirmed provably write-free (the critical result for the checkpoint):** the
+sync engine holds an `ImapClient` whose interface has **no** APPEND/STORE/MOVE/EXPUNGE verb — those
+live on a separate `ImapAppendClient` injected only into the send path — so a sync **structurally
+cannot** write to IMAP; it only writes the local cache. `verify-mailbox` issues only
+LIST/SELECT(readonly)/FETCH/LOGOUT. **No-send guard intact** (smtp not re-exported; daemon can't
+reach a transmit; guard covers static/dynamic/require/barrel). Flag-delta fix correct; engines
+faithful to §6; cache a strict one-way mirror; own reconnect + uidValidity invalidation sound; JWZ
+robust to malformed/looping headers.
+
+**Fixed:** `verify-mailbox` now fetches by sequence number (a uidNext-based UID range could hide
+recent mail on a sparse mailbox).
+**Deferred:** `computeSyncPlan` post-invalidation reason-code precision + a never-cached-changed-UID
+test (behavior correct, coverage gap). **Phase 5 note:** the nudge auto-draft must use `saveDraft`
+(never `sendReply`); assert it behaviorally then.
 
 ---
 

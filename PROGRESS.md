@@ -7,6 +7,47 @@
 
 ---
 
+## 2026-06-05 — Phases 2 + 3: metadata service + transport/cache/engines (→ mailbox checkpoint)
+
+**What I did**
+- Ran **Phase 2 (server)** and **Phase 3 (backend)** as **parallel** workstreams — file-disjoint
+  packages, each with the full three-role split (implementer → separate test-author → reviewer).
+  Pre-installed third-party deps first (hono, imapflow, mailparser, nodemailer, better-sqlite3) to
+  avoid lockfile races between concurrent agents.
+- **Phase 2:** Hono metadata service on better-sqlite3 (WAL) behind a repository interface; bearer +
+  X-Project-Id auth (sha256, timing-safe); tasks/transitions/promises/notes/repos/draft-meta/locks/
+  tone-LWW/learning/digest; 30-min lock TTL; plain SQL migrations; Dockerfile + GHCR publish
+  workflow. Privacy enforced by the shared strict DTOs (no body column). 211 tests.
+- **Phase 3:** pure engines (state machine over the shared table; folder mapper + SPECIAL-USE
+  resolution); better-sqlite3+FTS5 cache keyed by (mailbox,uidValidity,uid) + .eml on disk; own JWZ;
+  imapflow sync with an injected client seam, own reconnect, uidValidity invalidation, IDLE/poll;
+  manual-only nodemailer send; a read-only `verify-mailbox` checkpoint script. 122 tests.
+- **`npm run verify` green: 1166 tests** across the integrated tree.
+
+**What's half-done**
+- Nothing half-done — but Phases 2/3 are DoD-complete and I am **STOPPING at the mandatory Phase 3
+  mailbox checkpoint** (PLAN §12 CHECKPOINT 1) before building Phase 4+ on the transport layer.
+
+**Next (after the checkpoint)**
+- **Phase 4 — Claude job runner + triage + summaries**, then 4.5 integration, 5–9. Resume only once
+  the user has connected a real mailbox and verified live read-only sync.
+
+**Surprises/decisions**
+- **The separate test-author discipline paid off concretely:** the Phase 3 test author found a real
+  cache-corruption bug — a CONDSTORE flags-only delta (fires when you read/star mail in Apple Mail/
+  iPhone) was wiping the cached envelope via the full upsert. Fixed by routing flag-deltas through a
+  dedicated `updateFlags`. (D22)
+- **Read-only safety is structural, not just careful:** the reviewer confirmed the sync engine holds
+  an `ImapClient` with no write verbs at all (APPEND lives on a separate `ImapAppendClient` used only
+  by the send path), so a sync *cannot* write to IMAP. That's what makes the live checkpoint safe.
+- Both parallel reviews were PASS-WITH-CONCERNS with clean adversarial probes (server auth/scoping/
+  privacy; backend write-free read path + no-send guard). Minor concerns fixed before stopping.
+
+> **🛑 CHECKPOINT — awaiting the user.** See the checkpoint runbook in the session summary / the
+> `verify-mailbox` script. Resume to Phase 4 only on the user's go-ahead after live verification.
+
+---
+
 ## 2026-06-05 — Phase 1: shared types & contracts
 
 **What I did**
