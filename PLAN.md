@@ -452,8 +452,13 @@ Lucide, **REST + WebSocket** client to the backend, React Query, light/dark, sen
     [NEEDS STEER]
 25. **IDLE/poll strategy** → **IDLE INBOX (+ Sent)**, **poll other folders every 5 min**,
     `maxIdleTime` ~5–10 min; respect iCloud's tight connection cap. [NEEDS STEER]
-26. **Daily cost budget** → per-call cost logged; **a daily USD cap applies backpressure** to
-    non-essential jobs. Default cap TBD — *what monthly/daily ceiling do you want?* [NEEDS STEER]
+26. **Usage throttle (NOT a dollar budget)** → Mailordomo runs `claude` under the user's **Claude
+    subscription** (shared rolling ~5-hour window + weekly cap), not pay-per-token API. So the runner
+    **throttles the background daemon's notional usage** (proxied by the binary's reported
+    `total_cost_usd`) over a rolling window aligned to the subscription window, applying backpressure
+    to **deferrable** jobs (summaries/digest/ranking) while **essential** triage proceeds. Plus a
+    **startup warning if `ANTHROPIC_API_KEY` is set** (it would silently divert to paid API billing).
+    Default throttle/window TBD — *what notional ceiling + window do you want?* [NEEDS STEER] (→ D24)
 27. **Repo auto-pull (git URL mode) auth** → read-only **`git clone --mirror` + scheduled
     `git fetch`**; private repos need a **PAT or SSH key** the user provides (stored in Keychain).
     *Steer on preferred auth.* [NEEDS STEER]
@@ -558,6 +563,15 @@ Lucide, **REST + WebSocket** client to the backend, React Query, light/dark, sen
   full-folder flag rescan to surface externally-made flag changes — a future "deep poll" enhancement,
   not a v1 blocker. Credentials were used ephemerally for verification only and **never persisted**
   (Golden rule #4); per-mailbox creds will live in Keychain/`{mailbox}.env` once Phase 8 lands.
+- **D24** *(Phase 4, user steer)* **The cost cap is a usage THROTTLE, not a dollar budget.** Claude
+  Code runs on the user's **subscription** (shared rolling ~5-hour window + weekly cap), not
+  pay-per-token API. So the runner throttles the **background daemon's notional usage** (proxied by
+  the binary's `total_cost_usd`) over a rolling window aligned to the subscription window, backpressuring
+  **deferrable** jobs (summaries/digest/rank) while **essential** triage proceeds; `total_cost_usd`
+  is kept purely as the usage signal. A **startup check warns if `ANTHROPIC_API_KEY` is set** (it would
+  silently divert `claude` to paid API billing instead of consuming the subscription). Env:
+  `CLAUDE_USAGE_THROTTLE` (notional units/window) + `CLAUDE_USAGE_WINDOW_HOURS` (default 5), replacing
+  the old `CLAUDE_DAILY_BUDGET_USD`. Throttle default + weekly handling is [NEEDS STEER].
 
 ---
 
@@ -723,7 +737,7 @@ blocker. (→ D23) Resumed to Phase 4 on the user's delegation ("you verify").
 | **Body/PII leaking to server** | Schemas **reject** body fields; privacy-boundary test in metadata API + digest |
 | **uidValidity change corrupts cache** | Detect change → invalidate that mailbox's cache; cache is rebuildable by design |
 | **Sent mail not filed / broken threading** | `append()` to Sent/Drafts; set `In-Reply-To`/`References`; SPECIAL-USE folder resolution |
-| **Cost runaway** | Per-call cost logging + daily budget backpressure (open Q #26) |
+| **Subscription-window exhaustion by the daemon** | Usage **throttle** (notional, rolling window) backpressures deferrable background jobs; essential triage proceeds; **startup warns if `ANTHROPIC_API_KEY` is set** (would divert to paid API). Not a dollar budget — runs under the subscription (open Q #26 / D24) |
 
 ---
 

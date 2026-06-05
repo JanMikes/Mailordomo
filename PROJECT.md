@@ -171,8 +171,19 @@ invocations with **fixed model routing** and **editable per-task system prompts*
 
 - The runner is an **interface** with a real (spawns `claude`) and a **fake** (returns canned
   `structured_output`) implementation, so all downstream logic is testable without the API.
-- Every call logs `total_cost_usd` + token usage; a **daily budget cap** applies backpressure to
-  non-essential jobs (see `PLAN.md` open questions).
+- **Mailordomo runs `claude` under the user's Claude subscription, NOT pay-per-token API billing.**
+  The subscription is a **shared usage allowance over a rolling window** (~5-hour) plus a weekly cap.
+  The real risk is therefore **not a dollar bill** but the **background daemon exhausting that shared
+  window and starving the user's own interactive Claude Code work**.
+- So the runner applies a **usage throttle, not a money budget**: it accumulates each call's reported
+  `total_cost_usd` as a **notional usage signal** (a proxy for how much of the window a call consumed,
+  ~proportional to tokens) over a **rolling window aligned to the subscription's ~5-hour window**, and
+  applies **backpressure to non-essential/deferrable background jobs** (summaries, digest, ranking
+  tie-breaks) when the window is heavily used; **essential** jobs (triage on new inbound mail) still
+  proceed. `total_cost_usd` is kept purely as this signal — it is not a real charge under a subscription.
+- **Subscription guard:** at startup the app **warns if `ANTHROPIC_API_KEY` is set**, because the
+  `claude` binary would then bill the **paid API** per token instead of consuming the subscription —
+  a silent, unwanted diversion. (See `PLAN.md` open questions for the throttle's default + window.)
 
 ### Transport engine notes
 
