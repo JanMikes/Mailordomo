@@ -743,7 +743,7 @@ reviewer before moving on.)*
 - [x] **Phase 5** — 3-way promises + ranking + stale + overdue-nudge ✅
 - [x] **Phase 6** — tone memory + learning + sync ✅
 - [x] **Phase 7a** — Today + do-next cards ✅ — 🛑 **CHECKPOINT 2 CLEARED** ✅ (user eyeballed live vs seed; approved — ranking reads correctly, my-promises leading; → D30)
-- [ ] **Phase 7b** — split work surface + refine chat
+- [x] **Phase 7b** — split work surface + refine chat ✅
 - [ ] **Phase 7c** — 3-pane fallback + project views
 - [ ] **Phase 8** — setup wizard + repo pointers + credentials
 - [ ] **Phase 9** — digest + E2E + polish + launchd + docs
@@ -1012,6 +1012,38 @@ resolved via workspace hoisting but would break under strict isolation, contra D
 — acceptable for the checkpoint (seed uses a readable id), but per-project views (7c) should add a
 resolved project name; the lock-timeout setting's acquire/refresh call-site lands with the 7b work
 surface; the learning revert UI's LIFO/structured guard (D28) is still 7b/7c.
+
+### Phase 7b review (independent reviewer, fresh context) — split work surface + refine chat
+
+**Verdict:** PASS. **`npm run verify` green; 1744 tests** (backend 664, frontend 37, server 211, shared 832;
++38 intent-derived by a separate test-author, **6 mutation-checked**). Built via the orchestrator-as-architect
+(D31) → backend impl → frontend impl → separate test-author → reviewer split.
+
+**All three golden rules confirmed upheld (evidence):** **#1** — `POST .../send` is the sole transmission path,
+reachable only on an explicit user POST; `claude/draft.ts` has zero smtp imports; the **D31 ESLint guard closes
+the transitive `daemon/learning → api → smtp` barrel hole** (`API_BARREL_PATTERNS`); the reviewer traced the
+import graph and confirmed **`tone/**` is not a gap** (no smtp/api imports in that subtree); frontend Send is a
+single explicit button `onClick` with no effect/timer auto-fire; hostile-transport + intent tests confirm zero
+autonomous sends (draft/refine make 0 `transport.send` calls). **#3** — `DraftStore` is local-only (never
+synced); `DraftMeta` carries version/model/author only (strict DTO rejects a body); `ThreadDetail`/
+`ThreadMessageMeta` are strict + body-free by construction; the `/messages/:id/body` endpoint is a local-only
+hop (zero metadata-server requests, byte-scan intent test confirms); only the learning **summary** crosses.
+**#2** — no reconciliation between `DraftStore` and the server; learning revert restores a **local** snapshot then
+flips the server flag (local-truth-first, not a merge). **D27** lock TTL = `lockTimeoutMinutes*60` through
+acquire/refresh. **D28 LIFO guard** server-side in `POST /api/learning/:id/revert` (path-grouped, insertion-
+ordered; 404 no-local-snapshot, 409 already-reverted / out-of-order) — the full A→B→refuse-A→allow-B→allow-A
+sequence drives the **real** in-process metadata server.
+
+**Concerns (no must-fix, → Phase 9 polish):** `summaryMemo` never evicts (bounded by distinct thread count,
+small strings, cleared on restart — fine for a single-user local process; cap with an LRU later);
+`summarizeThread` runs **synchronously on `GET /api/threads/:threadId`** (first-open latency for fresh threads) —
+a deliberate v1 placeholder per D31 (memoized after first open, **fake runner in CI** so no live model in the
+gate, no golden-rule violation); convert to async-then-update (WS push) when the daemon pre-computes summaries in
+Phase 9.
+
+**Deferred (correctly scoped, no DoD gap):** project-NAME field → 7c; repo-freshness wiring → Phase 8;
+out-of-order revert beyond LIFO (D28 structured-rebuild) → later; live SMTP transport + `DraftFiler` Sent-append →
+Phase 8/9; react-router → 7c (the lifted `navigation.tsx` state drops into a router without touching 7b components).
 
 ---
 

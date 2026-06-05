@@ -7,6 +7,55 @@
 
 ---
 
+## 2026-06-06 — Phase 7b: split work surface + refine chat (CHECKPOINT 2 cleared)
+
+**What I did**
+- **Cleared CHECKPOINT 2** (D30) — the user eyeballed the Today command center live vs seed and approved
+  (ranking reads correctly, my-promises leading). Carried two steers: don't wire live mail yet (Phase 8/9);
+  carry forward the recorded 7a deferrals.
+- Ran **Phase 7b** via the **four-role split** (orchestrator-as-architect **D31** → backend impl → frontend impl
+  → **separate test-author** → independent **reviewer**), all golden-rule-clean:
+  - **Backend:** `claude/draft.ts` (Opus, tone-layered via `--append-system-prompt-file`, **replay** refine —
+    rule #5); a dedicated **local `DraftStore`** (`drafts.db`, body + transcript, **never synced** — rules #2/#3);
+    the work-surface API (body-free `ThreadDetail` + a **local-only** `.eml` body hop; draft/refine/get; **manual
+    `POST /send`** via a **stub transport** — D30; lock acquire/refresh/release consuming `lockTimeoutMinutes` →
+    `ttl_seconds`; `GET /learning` + **LIFO-guarded** `POST /learning/:id/revert`); the **draft-vs-sent learning
+    trigger** (the Phase 6 trigger, finally wired, best-effort). Only body-free `DraftMeta` crosses to the server.
+  - **Frontend:** the **split work surface** (pinned summary + repo-freshness + thread left; editable draft +
+    model badge + refine chat + **instruction textarea pinned** + **Send primary** right), no-router view switch,
+    lock acquire/heartbeat/release + presence banner, a **Memory** view with LIFO-guarded revert. +2 Radix deps.
+  - **Hardened the no-send guard (D31):** `app.ts` now imports `smtp/send`, so the root barrel transitively
+    reaches it — extended the ESLint guard so `daemon/**` + `learning/**` can't import `api/**` or the self-name
+    barrel; +4 sendguard fixture cases (11 total). The reviewer traced the graph and confirmed **`tone/**` is not
+    a gap**.
+- Regenerated the **cross-platform lockfile** in a Linux `node:22` container (2 new Radix deps); **`npm ci`
+  validated green on Linux** (the @emnapi chain + macOS binaries both retained).
+- Separate test-author added **38 intent-derived tests** (**6 mutation-checked**, failed-then-passed); **no bugs
+  found**. Reviewer: **PASS**, all three golden rules upheld with evidence.
+- **`npm run verify` green: 1744 tests.** Pushed in 6 small commits.
+
+**What's half-done**
+- Nothing in 7b — DoD met (§4.5). Two recorded polish deferrals (→ Phase 9): the unbounded `summaryMemo` (cap with
+  an LRU) and the synchronous summary-on-GET (move to async/WS once the daemon pre-computes summaries).
+
+**Next**
+- **Phase 7c — classic 3-pane fallback + all-projects / per-project views**, plus the **project-NAME field** on
+  cards (the recorded 7a→7c display gap) and the D28 out-of-order-revert structured guard if tackled there.
+
+**Surprises/decisions**
+- **The first user-triggered send path** went in this phase. It lives ONLY in `api/` (the sanctioned manual
+  layer), uses a **stub transport** (no live creds until Phase 8), and is provably unreachable from the daemon —
+  the barrel-transitive hole it introduced was closed by hardening the lint guard rather than restructuring the
+  barrel (nothing relied on the barrel reaching `app`).
+- **A frontend implementer agent returned corrupted output (0 tool uses, did nothing).** Confirmed the tree was
+  untouched and re-dispatched a fresh agent, which succeeded — a reminder to verify a failed agent's blast radius
+  before retrying.
+- **Learning revert leans on the authoritative server-side 409 LIFO guard, not UI pre-disabling** — the shared
+  `LearningEntry` deliberately lacks the local tone-file `path` (server stores **summary only**, D28), so the UI
+  can't correctly pre-compute per-file eligibility; the 409 is always-correct and never blocks a valid revert.
+
+---
+
 ## 2026-06-05 — Phase 7a: Today command center + do-next cards (🛑 CHECKPOINT 2)
 
 **What I did**
