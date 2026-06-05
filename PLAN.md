@@ -363,7 +363,16 @@ Lucide, **REST + WebSocket** client to the backend, React Query, light/dark, sen
   - **Deliverables:** app shell + theming + data layer (REST/WS + React Query); the **Today**
     view: 3-way promise metric cards, done-vs-remaining counts, ranked **do-next task cards**
     (state badge, project, deadline, draft-ready indicator, inline actions).
-  - **Tests:** do-next card actions; metric cards reflect metadata; live-update wiring.
+  - **Folded steers (D26/D27):** (1) **do-next ranker gains the `they-asked` tier** — `my-promise`
+    strictly above `they-asked`, both above sender importance (key becomes `[hasMyPromise,
+    myPromiseUrgency, hasTheyAsked, theyAskedUrgency, importance, age]`); the queue caller (the Today
+    backend endpoint) is the first consumer, so the ranker extension lands here. (2) Establish a
+    **local settings store + minimal settings surface** so the **stale thresholds** (feed
+    `detectStale`) and **lock timeout** (sent as `ttl_seconds`) are **user-adjustable**, defaults
+    unchanged. *(🛑 mandatory human stop at the END of 7a — eyeball the core UI against real mail.)*
+  - **Tests:** do-next card actions; metric cards reflect metadata; live-update wiring; **ranker
+    two-tier ordering** (my-promise strictly above they-asked above importance, intent-derived);
+    settings round-trip (a changed stale-day / lock-minute value reaches the engine / `ttl_seconds`).
   - **DoD:** §4.5 template; recreates the *Today* reference mockup's structure.
 - **Phase 7b — Split work surface + refine chat**
   - **Deliverables:** the split work surface — thread + **pinned Claude summary** + repo-freshness
@@ -438,6 +447,15 @@ Lucide, **REST + WebSocket** client to the backend, React Query, light/dark, sen
 20. **Monorepo task runner** → plain npm scripts (turborepo only if needed). [RESOLVED]
 
 **Needs your steer (defaults chosen, easily changed):**
+
+> **[ALL APPROVED — 2026-06-05 Phase 5→6 boundary steer]** Items #21–#30 are **approved as the
+> recorded defaults** (incl. **usage throttle 2.50 notional / 5h window**, already the code default in
+> `claude/throttle.ts`). **Two modifications** were directed and are folded in below: **#31** is
+> RESOLVED toward **separate tiers** (NOT the old "merge" leaning — see #31 and D26), and the **lock
+> timeout (#24)** plus the **stale thresholds** (D25: waiting 3d / needs-reply 2d) must become
+> **user-adjustable settings surfaced in the Phase 7 UI** — the current values stay as defaults
+> (see D27). Each item below is annotated [APPROVED].
+
 21. **Server persistence: SQLite-on-server vs Postgres.** Default **SQLite (WAL) behind a repo
     layer** — at 2-user scale it's simpler, one DB tech, trivial Docker (image + volume, no
     compose). Swap to Postgres is mechanical. *Steer if you expect more users/teams.* [NEEDS STEER]
@@ -449,7 +467,10 @@ Lucide, **REST + WebSocket** client to the backend, React Query, light/dark, sen
     from source (needs Xcode CLT). *Steer: install Node 22 (recommended) or accept a source
     build on 25.* [NEEDS STEER]
 24. **Lock timeout default** → **30 min**, refreshed by a heartbeat while a thread is open.
-    [NEEDS STEER]
+    [APPROVED as default] **— but must be a user-adjustable setting surfaced in the Phase 7 UI, not a
+    hardcoded constant** (steer; → D27). The plumbing already exists: the server resolves a per-request
+    `ttl_seconds` (`server/src/locks.ts:resolveTtlSeconds`) falling back to `DEFAULT_LOCK_TTL_SECONDS`,
+    so the local app sends the user's chosen value on acquire/refresh; the default is unchanged.
 25. **IDLE/poll strategy** → **IDLE INBOX (+ Sent)**, **poll other folders every 5 min**,
     `maxIdleTime` ~5–10 min; respect iCloud's tight connection cap. [NEEDS STEER]
 26. **Usage throttle (NOT a dollar budget)** → Mailordomo runs `claude` under the user's **Claude
@@ -458,7 +479,9 @@ Lucide, **REST + WebSocket** client to the backend, React Query, light/dark, sen
     `total_cost_usd`) over a rolling window aligned to the subscription window, applying backpressure
     to **deferrable** jobs (summaries/digest/ranking) while **essential** triage proceeds. Plus a
     **startup warning if `ANTHROPIC_API_KEY` is set** (it would silently divert to paid API billing).
-    Default throttle/window TBD — *what notional ceiling + window do you want?* [NEEDS STEER] (→ D24)
+    **[APPROVED]** → **2.50 notional units / 5h window** (already the code default:
+    `DEFAULT_USAGE_THROTTLE = 2.5`, `DEFAULT_USAGE_WINDOW_HOURS = 5`, env-overridable). Weekly-cap
+    handling stays a later refinement. (→ D24)
 27. **Repo auto-pull (git URL mode) auth** → read-only **`git clone --mirror` + scheduled
     `git fetch`**; private repos need a **PAT or SSH key** the user provides (stored in Keychain).
     *Steer on preferred auth.* [NEEDS STEER]
@@ -470,9 +493,12 @@ Lucide, **REST + WebSocket** client to the backend, React Query, light/dark, sen
     runs); **to verify empirically in Phase 4.** [NEEDS STEER / verify]
 31. **Do-next §8 step-1 scope (Phase 5)** → does step-1 urgency cover only **`my-promise`**
     ("deadlines I made", current impl) or **also `they-asked`** deadlines (§7 also groups these as
-    "I owe")? The ranker engine is direction-agnostic — this is a **caller-projection** policy to
-    settle when the do-next queue is wired (Phase 7a). Default leaning: **include `they-asked`
-    deadlines** (the queue answers "what must I deliver"). [NEEDS STEER]
+    "I owe")? **[RESOLVED — 2026-06-05 steer; SUPERSEDES the old "include/merge" leaning]:** keep
+    **`my-promise` and `they-asked` as SEPARATE tiers** per PROJECT.md §8 — **my own commitments rank
+    strictly above their requests; do NOT merge them into one tier.** Concretely (→ D26), the do-next
+    ranker gains a **second commitment tier** between step-1 (my-promise) and step-2 (sender
+    importance): `[hasMyPromise, myPromiseUrgency, hasTheyAsked, theyAskedUrgency, importance, age]`.
+    This is a Phase 7a ranker change (the do-next queue caller is wired there), not just a projection.
 
 ---
 
@@ -576,7 +602,8 @@ Lucide, **REST + WebSocket** client to the backend, React Query, light/dark, sen
   is kept purely as the usage signal. A **startup check warns if `ANTHROPIC_API_KEY` is set** (it would
   silently divert `claude` to paid API billing instead of consuming the subscription). Env:
   `CLAUDE_USAGE_THROTTLE` (notional units/window) + `CLAUDE_USAGE_WINDOW_HOURS` (default 5), replacing
-  the old `CLAUDE_DAILY_BUDGET_USD`. Throttle default + weekly handling is [NEEDS STEER].
+  the old `CLAUDE_DAILY_BUDGET_USD`. **Throttle default APPROVED at 2.50 / 5h** (2026-06-05 steer);
+  weekly-cap handling stays a later refinement.
 - **D25** *(Phase 5)* **3-way promise tracker** built on the **LLM-extraction / deterministic-
   reconciler split** (PROJECT.md §7). Load-bearing semantic call: **`my-promise` and `they-asked`
   are both obligor=me** (indistinguishable by who/whom — only the *initiator* differs, which is
@@ -588,6 +615,25 @@ Lucide, **REST + WebSocket** client to the backend, React Query, light/dark, sen
   as a sort-key tuple; **step-4 Sonnet consequence is a separate, permutation-guarded tie-break seam**
   (the deterministic core is API-free). **Stale** thresholds: waiting 3d, needs-reply/drafted 2d
   (first-pass). The **overdue-nudge** is structurally send-proof (DraftFiler seam, `saveDraft` only).
+- **D26** *(Phase 5→6 boundary, user steer — resolves open Q #31)* **Do-next ranking keeps `my-promise`
+  and `they-asked` as SEPARATE tiers; my own commitments rank STRICTLY ABOVE their requests** (per
+  PROJECT.md §8 — "promises/deadlines *I made*" lead). This **supersedes** the Phase 5 deferral's
+  "default leaning toward including `they-asked` in step-1" — they are **not** merged. Implementation
+  (Phase 7a, when the do-next queue caller is wired): extend the ranker key from
+  `[hasMyPromise, myPromiseUrgency, importance, age]` to **`[hasMyPromise, myPromiseUrgency,
+  hasTheyAsked, theyAskedUrgency, importance, age]`** — add a `theyAsked` projection to `RankableTask`
+  and a second commitment band between step-1 and step-2 in `compareRankKeys`. `awaiting-them` stays
+  out of the urgency tiers (it drives the *chase* queue, not "what I must deliver"). The step-4
+  consequence tie-break seam is unchanged.
+- **D27** *(Phase 5→6 boundary, user steer)* **The stale thresholds (waiting 3d / needs-reply 2d, D25)
+  and the lock timeout (30 min, #24) must be USER-ADJUSTABLE settings surfaced in the Phase 7 UI — not
+  hardcoded constants.** The current values stay as **defaults**. The engines are already
+  parameterized (`detectStale(input, now, thresholds)` accepts `StaleThresholds`; the lock TTL is a
+  per-request `ttl_seconds` resolved server-side), so this is additive: a **local settings store**
+  (local app config — NOT server state, NOT browser localStorage as source of truth, per the golden
+  rules and code conventions) read by the backend and exposed to the frontend, with a settings surface
+  in Phase 7. Stale-days feed `detectStale`; the lock-minutes value is sent as `ttl_seconds` on
+  acquire/refresh. Other recorded defaults (#21–#30, incl. usage throttle 2.50/5h) are approved as-is.
 
 ---
 
@@ -811,10 +857,11 @@ lint guard holds).
 **Deferred (→ open Q #31):** **§8 step-1 scope** — the ranker prioritizes `my-promise` only ("deadlines
 I made"), excluding `they-asked` deadlines (which §7 also groups as "I owe"). The ranker engine is
 direction-agnostic (the caller projects what feeds step-1), and there is no do-next-queue *caller*
-yet, so this is a recorded **caller-policy** decision to settle when the queue is wired (Phase 7a) —
-default leaning toward including `they-asked` deadlines, since the do-next goal is "what I must
-deliver." Also deferred: a ranker test documenting the current `they-asked` exclusion; a `next month`
-overflow test.
+yet, so this is a recorded **caller-policy** decision to settle when the queue is wired (Phase 7a).
+**→ RESOLVED 2026-06-05 (D26):** keep `my-promise` and `they-asked` as **SEPARATE tiers**, my-promise
+**strictly above** — NOT merged (this reverses the old "include them together" leaning). The Phase 7a
+ranker change adds a second commitment band; the `they-asked` ordering test lands with it. (`next
+month` overflow test still deferred.)
 
 ---
 
@@ -840,8 +887,11 @@ overflow test.
 - **CHECKPOINT 1 — after Phase 3 (the single mid-build stop):** before Phases 4–9 build on the
   transport layer, **STOP** and let the user connect **one real mailbox** and verify live
   read-only sync, SPECIAL-USE folder resolution, JWZ threading on real messages, and
-  `uidValidity` handling. Resume only on the user's go-ahead. *(This is the one sanctioned
-  exception to "no further stops.")*
+  `uidValidity` handling. Resume only on the user's go-ahead. *(Originally the one sanctioned
+  exception to "no further stops.")* ✅ done (Seznam, live, read-only — see §10 checkpoint note).
+- **CHECKPOINT 2 — at the END of Phase 7a (2026-06-05 steer):** after the **Today command center +
+  do-next cards** land and `verify` is green, **STOP** so the user can eyeball the core UI against
+  real mail before 7b/7c build on it. Resume to Phase 7b only on the user's go-ahead.
 - Otherwise: build Phases 0→9 autonomously, keeping `main` buildable at every boundary, updating
-  §10 + `PROGRESS.md` as each DoD is met. The only other stop is a **golden-rule conflict** or a
-  **high-stakes ambiguity** (record it here and ask).
+  §10 + `PROGRESS.md` as each DoD is met. The only other stops are this Phase-7a checkpoint, a
+  **golden-rule conflict**, or a **high-stakes ambiguity** (record it here and ask).
