@@ -468,6 +468,11 @@ Lucide, **REST + WebSocket** client to the backend, React Query, light/dark, sen
     **cache: drop-and-rebuild** (disposable). *Steer if you'd prefer drizzle-kit.* [NEEDS STEER]
 30. **`--bare` mode for daemon jobs** → likely yes (skip hook/plugin discovery for clean headless
     runs); **to verify empirically in Phase 4.** [NEEDS STEER / verify]
+31. **Do-next §8 step-1 scope (Phase 5)** → does step-1 urgency cover only **`my-promise`**
+    ("deadlines I made", current impl) or **also `they-asked`** deadlines (§7 also groups these as
+    "I owe")? The ranker engine is direction-agnostic — this is a **caller-projection** policy to
+    settle when the do-next queue is wired (Phase 7a). Default leaning: **include `they-asked`
+    deadlines** (the queue answers "what must I deliver"). [NEEDS STEER]
 
 ---
 
@@ -572,6 +577,17 @@ Lucide, **REST + WebSocket** client to the backend, React Query, light/dark, sen
   silently divert `claude` to paid API billing instead of consuming the subscription). Env:
   `CLAUDE_USAGE_THROTTLE` (notional units/window) + `CLAUDE_USAGE_WINDOW_HOURS` (default 5), replacing
   the old `CLAUDE_DAILY_BUDGET_USD`. Throttle default + weekly handling is [NEEDS STEER].
+- **D25** *(Phase 5)* **3-way promise tracker** built on the **LLM-extraction / deterministic-
+  reconciler split** (PROJECT.md §7). Load-bearing semantic call: **`my-promise` and `they-asked`
+  are both obligor=me** (indistinguishable by who/whom — only the *initiator* differs, which is
+  prose-level), so the reconciler **only structurally forces `awaiting-them`** (obligor=other +
+  beneficiary=me) and **trusts the model's hint** between the two "I owe" directions. Status
+  `open→fulfilled|overdue|cancelled` (overdue = `due_at < now`, strict). **Deadlines anchored to the
+  message-received day in Europe/Prague**, with DST computed **in-code** (EU last-Sunday rule — pure,
+  no `Intl`/tz-db, end-of-local-day). The **do-next ranker** implements §8 steps 1→3 deterministically
+  as a sort-key tuple; **step-4 Sonnet consequence is a separate, permutation-guarded tie-break seam**
+  (the deterministic core is API-free). **Stale** thresholds: waiting 3d, needs-reply/drafted 2d
+  (first-pass). The **overdue-nudge** is structurally send-proof (DraftFiler seam, `saveDraft` only).
 
 ---
 
@@ -588,8 +604,8 @@ reviewer before moving on.)*
 - [x] **🛑 Phase 3 HUMAN CHECKPOINT** — live one-mailbox read-only verification ✅ (verified live against a real Seznam mailbox)
 - [x] **Phase 4** — Claude job runner + triage + summaries ✅
 - [x] **Phase 4.5** — first integration milestone (backend↔server↔frontend; rebuild + lock visibility) ✅
-- [ ] **Phase 5** — 3-way promises + ranking + stale + overdue-nudge
-- [ ] **Phase 6** — tone memory + learning + sync
+- [x] **Phase 5** — 3-way promises + ranking + stale + overdue-nudge ✅
+- [ ] **Phase 6** — tone memory + learning + sync ← **next**
 - [ ] **Phase 7a** — Today + do-next cards
 - [ ] **Phase 7b** — split work surface + refine chat
 - [ ] **Phase 7c** — 3-pane fallback + project views
@@ -773,6 +789,32 @@ bad `CLAUDE_BIN` reports red.
 tier TTL-expiry is covered at the Phase 2 server unit level (the in-process clock isn't injectable
 via `app.fetch`); `MetadataClient` exposes only the Phase-4.5 endpoints (Note/ToneFile/Promise/
 DraftMeta added as later phases consume them).
+
+### Phase 5 review (independent reviewer, fresh context) — 3-way promise tracker
+
+**Verdict:** PASS-WITH-CONCERNS → concerns fixed. **`verify` green; backend 474 tests** (134
+independent intent-derived by a separate test-author, additive to the implementer's smoke suites;
+2 mutation-checked). **Golden rule #1 confirmed safe** (the highest-value check): the overdue-nudge
+**can never send** — `claude/nudge.ts` imports no `sendReply`/`smtp/**`; the injected `DraftFiler`
+seam has **no transmit verb** (a transmitting impl can't typecheck as a nudge filer); a `HostileFiler`
+test with a `.send()` spy asserts `sendCalls === 0`. All five engines confirmed **pure** (injected
+`now`/ids, no `Date.now()`); the hand-rolled **Prague DST** math verified against the EU
+last-Sunday rule (CEST 21:59:59Z / CET 22:59:59Z end-of-day, two-pass refinement); routing correct
+(extract→haiku+json-schema, nudge→opus); 474 tests meaningful not padded (exhaustive direction×status
++ obligor/beneficiary matrices, adversarial DST).
+
+**Fixed:** promise-candidate + wrapper schemas now `z.strictObject` (Phase 1 D20 convention /
+defense-in-depth); the "next month" comment corrected (JS date arithmetic OVERFLOWS forward, doesn't
+clamp); a daemon nudge-wiring note (the `DraftFiler` binding must stay OUTSIDE `daemon/**` so the
+lint guard holds).
+
+**Deferred (→ open Q #31):** **§8 step-1 scope** — the ranker prioritizes `my-promise` only ("deadlines
+I made"), excluding `they-asked` deadlines (which §7 also groups as "I owe"). The ranker engine is
+direction-agnostic (the caller projects what feeds step-1), and there is no do-next-queue *caller*
+yet, so this is a recorded **caller-policy** decision to settle when the queue is wired (Phase 7a) —
+default leaning toward including `they-asked` deadlines, since the do-next goal is "what I must
+deliver." Also deferred: a ranker test documenting the current `they-asked` exclusion; a `next month`
+overflow test.
 
 ---
 

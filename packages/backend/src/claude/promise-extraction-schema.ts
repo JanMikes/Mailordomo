@@ -59,7 +59,7 @@ export type PromiseFulfillmentSignal = (typeof PROMISE_FULFILLMENT_SIGNALS)[numb
  *  - `fulfillment_signal` — whether this same message already fulfils/cancels the item.
  *  - `confidence`         — model self-rating; the reconciler may drop `low`-confidence candidates.
  */
-export const PromiseCandidateSchema = z.object({
+export const PromiseCandidateSchema = z.strictObject({
   direction_hint: z.enum(PROMISE_DIRECTION_HINTS),
   text: z.string().min(1).max(1000),
   due_raw: z.string().max(200).nullable(),
@@ -72,7 +72,7 @@ export const PromiseCandidateSchema = z.object({
 export type PromiseCandidate = z.infer<typeof PromiseCandidateSchema>;
 
 /** The model returns an OBJECT with a `promises` array (an array root is awkward for the CLI). */
-export const PromiseExtractionSchema = z.object({
+export const PromiseExtractionSchema = z.strictObject({
   promises: z.array(PromiseCandidateSchema),
 });
 export type PromiseExtraction = z.infer<typeof PromiseExtractionSchema>;

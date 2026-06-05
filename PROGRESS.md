@@ -7,6 +7,40 @@
 
 ---
 
+## 2026-06-05 — Phase 5: 3-way promise tracker + ranker + stale + overdue-nudge
+
+**What I did**
+- Built the load-bearing commitment tracker (three-role split): the **LLM-extraction /
+  deterministic-reconciler split** (pure reconciler buckets candidates into deliver/owe/chase,
+  tracks status, anchors deadlines to the message date in Europe/Prague with **DST computed in-code**
+  — no tz-db, stays pure); the **do-next ranker** (§8 steps 1→3 deterministic, step-4 Sonnet
+  consequence a separate permutation-guarded tie-break seam); **stale** detection; and the **one
+  sanctioned overdue-nudge** — structurally send-proof.
+- Independent test-author added 134 intent-derived tests (backend 474), incl. adversarial DST and a
+  full direction×status nudge sweep. Reviewer: PASS-WITH-CONCERNS, **Golden rule #1 confirmed safe**
+  (nudge can never send). Fixed: strict candidate schemas, a comment, a daemon nudge-wiring note.
+- **`npm run verify` green: 1518 tests.** Pushed.
+
+**What's half-done**
+- Nothing. Phase 5 DoD met. One recorded deferral: §8 step-1 scope (my-promise vs +they-asked) is a
+  caller-projection policy to settle when the do-next queue is wired in Phase 7a (open Q #31).
+
+**Next**
+- **Phase 6 — tone memory + silent learning + cross-machine sync**: layered tone files
+  (project→mailbox→contact), learning from recurring instructions + the draft-vs-sent diff
+  (revertable changelog), synced via the server (LWW per file).
+
+**Surprises/decisions**
+- **The load-bearing bucketing insight (D25):** my-promise and they-asked are both "me owes" and
+  can't be told apart by who/whom — only `awaiting-them` (they owe me) is structurally forced; the
+  reconciler trusts the model's hint between the two "I owe" directions.
+- **Golden rule #1 is enforced by TYPES here:** the nudge's `DraftFiler` seam has no transmit verb,
+  so a sending function can't even typecheck as a nudge filer — caught structurally, not just by a test.
+- Kept the Prague DST resolver dependency-free (in-code EU last-Sunday rule) to keep the deadline
+  engine pure and deterministically testable.
+
+---
+
 ## 2026-06-05 — Phase 4.5: first integration slice (backend ↔ server ↔ frontend)
 
 **What I did**

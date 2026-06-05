@@ -8,5 +8,11 @@
  * `lint` — and therefore the commit/push gate — before tests even run. See `sendguard.test.ts`.
  *
  * Phase 0 is just the marker; the real daemon lands in Phases 4-9.
+ *
+ * NUDGE WIRING NOTE (Golden rule #1): when the daemon triggers the sanctioned overdue-nudge it runs
+ * the PURE lapsed-promise predicate + the Opus draft job, but the `DraftFiler` (which wraps
+ * `saveDraft`) MUST be injected from the API/orchestrator layer — never imported here. `saveDraft`
+ * lives under `smtp/**`, which the lint guard forbids the daemon from importing, so binding the
+ * filer inside `daemon/**` would fail `lint`. Keep the filer binding outside the daemon.
  */
 export const DAEMON_NAME = 'mailordomo-daemon' as const;

@@ -210,10 +210,12 @@ export function resolveRelativeDeadline(raw: string, anchorIso: string): Date | 
     return atEndOfDay(addLocalDays(anchorDay, deltaToThisFriday + 7));
   }
 
-  // next month → same day-of-month, one month on (clamped by Date arithmetic)
+  // next month → same day-of-month, one month on. JS date arithmetic OVERFLOWS FORWARD when the
+  // day-of-month doesn't exist next month (e.g. Jan 31 → Mar 3); it does NOT clamp to the last day.
+  // Acceptable for this rare phrase; documented so the behavior isn't mistaken for clamping.
   if (phrase === 'next month') {
     const next: LocalDay = { year: anchorDay.year, month: anchorDay.month + 1, day: anchorDay.day };
-    // Normalize via UTC (handles year rollover + clamps overflow days).
+    // Normalize via UTC (handles year rollover; overflows forward on a day-of-month overflow).
     const norm = new Date(Date.UTC(next.year, next.month - 1, next.day));
     return atEndOfDay({
       year: norm.getUTCFullYear(),
