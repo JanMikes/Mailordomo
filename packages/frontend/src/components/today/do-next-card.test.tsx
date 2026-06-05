@@ -59,9 +59,16 @@ describe('DoNextCard (smoke)', () => {
     renderCard(<DoNextCard card={sampleCard} />);
     expect(screen.getByText('Quarterly report')).toBeInTheDocument();
     expect(screen.getByText('Petr Novák')).toBeInTheDocument();
-    expect(screen.getByText('acme')).toBeInTheDocument();
+    // The resolved project NAME is shown (D32), not the raw id.
+    expect(screen.getByText('Acme')).toBeInTheDocument();
+    expect(screen.queryByText('acme')).not.toBeInTheDocument();
     expect(screen.getByText('Needs reply')).toBeInTheDocument();
     expect(screen.getByText('Draft ready')).toBeInTheDocument();
+  });
+
+  it('falls back to the raw project id when the name is null (D32)', () => {
+    renderCard(<DoNextCard card={{ ...sampleCard, projectName: null }} />);
+    expect(screen.getByText('acme')).toBeInTheDocument();
   });
 
   it('Open thread / Draft open the work surface (Draft kicks off a draft); other actions stay active', async () => {

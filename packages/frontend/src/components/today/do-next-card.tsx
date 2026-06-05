@@ -63,7 +63,7 @@ export function DoNextCard({ card }: { card: DoNextCardModel }) {
             <span aria-hidden className="text-muted-foreground/40 px-1.5">
               ·
             </span>
-            <span>{card.projectId}</span>
+            <span>{card.projectName ?? card.projectId}</span>
           </p>
 
           {hasChips && (

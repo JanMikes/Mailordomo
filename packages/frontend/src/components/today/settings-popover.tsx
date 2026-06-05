@@ -1,21 +1,26 @@
 /**
- * The settings knobs surfaced on the Today header (D27/D29). Three user-adjustable values that feed
- * the backend engines: the two stale-day thresholds (→ `detectStale`) and the lock timeout in
- * minutes (→ `ttl_seconds` on lock acquire/refresh). Defaults are unchanged; this just exposes them.
+ * The settings knobs surfaced on the Today header (D27/D29/D32). User-adjustable values:
+ *  - the persisted LANDING VIEW (`defaultView`: the opinionated Today, or the classic 3-pane fallback)
+ *    — the real "never trapped" knob (D32); written immediately on select, like the theme toggle;
+ *  - the two stale-day thresholds (→ `detectStale`) and the lock timeout in minutes (→ `ttl_seconds`),
+ *    saved together via the Save button.
  *
  * Reads `GET /api/settings` and writes a partial patch via `PUT /api/settings` (strict — only changed,
- * valid fields are sent). The theme lives in the sidebar toggle, not here.
+ * valid fields are sent). Persisted in AppSettings, NOT localStorage. The theme lives in the sidebar
+ * toggle, not here.
  */
 import { useEffect, useState } from 'react';
-import { Settings2 } from 'lucide-react';
-import type { UpdateSettingsRequest } from '@mailordomo/shared';
+import { LayoutGrid, Settings2, type LucideIcon, Columns3 } from 'lucide-react';
+import type { DefaultView, UpdateSettingsRequest } from '@mailordomo/shared';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Separator } from '@/components/ui/separator';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { useSettingsQuery, useUpdateSettings } from '@/lib/today-hooks';
+import { cn } from '@/lib/utils';
 
 interface FormState {
   waitingStaleDays: string;
@@ -81,11 +86,17 @@ export function SettingsPopover() {
       </PopoverTrigger>
       <PopoverContent align="end" className="w-80">
         <div className="space-y-1">
-          <p className="text-sm font-medium">Today settings</p>
+          <p className="text-sm font-medium">Settings</p>
           <p className="text-muted-foreground text-xs">
-            Thresholds that feed triage. Defaults are sensible — tune if needed.
+            Your landing view + triage thresholds. Defaults are sensible — tune if needed.
           </p>
         </div>
+        <Separator className="my-3" />
+        <DefaultViewControl
+          value={settings.data?.defaultView ?? null}
+          onChange={(next) => update.mutate({ defaultView: next })}
+          disabled={update.isPending}
+        />
         <Separator className="my-3" />
         {form === null ? (
           <p className="text-muted-foreground py-4 text-sm">Loading…</p>
@@ -152,6 +163,72 @@ function Field({ id, label, unit, value, onChange }: FieldProps) {
           className="h-8 w-16 text-right"
         />
         <span className="text-muted-foreground w-8 text-xs">{unit}</span>
+      </div>
+    </div>
+  );
+}
+
+const VIEW_OPTIONS: { value: DefaultView; label: string; Icon: LucideIcon }[] = [
+  { value: 'today', label: 'Today', Icon: LayoutGrid },
+  { value: 'three-pane', label: '3-pane', Icon: Columns3 },
+];
+
+/**
+ * The persisted landing-surface control (D32) — the real "never trapped" knob. A segmented control
+ * (like the theme toggle) that writes `defaultView` to AppSettings immediately on select, so the user
+ * can make the classic 3-pane their landing view. Persisted server-side-free in the local config, NOT
+ * localStorage. `null` value = settings still loading (nothing selected yet).
+ */
+function DefaultViewControl({
+  value,
+  onChange,
+  disabled,
+}: {
+  value: DefaultView | null;
+  onChange: (next: DefaultView) => void;
+  disabled: boolean;
+}) {
+  return (
+    <div className="space-y-2">
+      <div className="space-y-0.5">
+        <p className="text-sm font-medium">Landing view</p>
+        <p className="text-muted-foreground text-xs">Which view opens when you launch the app.</p>
+      </div>
+      <div
+        role="radiogroup"
+        aria-label="Landing view"
+        className="bg-muted/70 grid grid-cols-2 gap-0.5 rounded-lg p-0.5"
+      >
+        {VIEW_OPTIONS.map(({ value: option, label, Icon }) => {
+          const active = value === option;
+          return (
+            <Tooltip key={option}>
+              <TooltipTrigger asChild>
+                <button
+                  type="button"
+                  role="radio"
+                  aria-checked={active}
+                  disabled={disabled}
+                  onClick={() => onChange(option)}
+                  className={cn(
+                    'focus-visible:ring-ring/60 inline-flex items-center justify-center gap-1.5 rounded-md px-2 py-1.5 text-xs font-medium outline-none transition-colors focus-visible:ring-2 disabled:opacity-60',
+                    active
+                      ? 'bg-background text-foreground shadow-sm'
+                      : 'text-muted-foreground hover:text-foreground',
+                  )}
+                >
+                  <Icon className="size-3.5" aria-hidden />
+                  {label}
+                </button>
+              </TooltipTrigger>
+              <TooltipContent>
+                {option === 'today'
+                  ? 'The opinionated command center'
+                  : 'The classic 3-pane fallback'}
+              </TooltipContent>
+            </Tooltip>
+          );
+        })}
       </div>
     </div>
   );

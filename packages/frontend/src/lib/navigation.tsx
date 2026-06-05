@@ -1,17 +1,21 @@
 /**
- * The app-level view switch (PLAN.md §7 Phase 7b / D31). There is deliberately NO router yet — 7c
- * decides when project/3-pane views warrant one. Instead `App` lifts a tiny bit of navigation state
+ * The app-level view switch (PLAN.md §7 Phase 7b / D31; extended in 7c / D32). There is deliberately
+ * NO router yet — the surface stays small enough that `App` lifts a tiny bit of navigation state
  * (which thread, if any, is open + which top-level view is selected) and shares it through this
- * context, so the do-next card can open the work surface and the sidebar can switch views without
- * prop-drilling or any global mutable singleton.
+ * context, so the do-next card / board card can open the work surface and the sidebar can switch
+ * views without prop-drilling or any global mutable singleton.
  *
  * The context has a safe no-op DEFAULT so a component rendered outside the provider (e.g. an isolated
  * unit test of a do-next card) never throws — it simply gets inert navigation.
  */
 import { createContext, useContext } from 'react';
 
-/** The top-level views reachable from the sidebar (the thread work surface is opened separately). */
-export type AppView = 'today' | 'memory';
+/**
+ * The top-level views reachable from the sidebar (the thread work surface is opened separately):
+ * the opinionated `today` command center, the `memory` changelog, the all-projects board
+ * (`all-projects`), and the classic `three-pane` fallback — the "never trapped" escape hatch (D32).
+ */
+export type AppView = 'today' | 'memory' | 'all-projects' | 'three-pane';
 
 export interface NavController {
   /** The currently selected top-level view (ignored while a thread work surface is open). */

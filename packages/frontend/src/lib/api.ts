@@ -16,6 +16,8 @@ import type {
   AppSettings,
   LearningEntry,
   Lock,
+  ProjectResponse,
+  ProjectsBoard,
   ReleaseLockResponse,
   Task,
   ThreadDetail,
@@ -28,6 +30,8 @@ import {
   LearningEntryListResponseSchema,
   LearningEntrySchema,
   LockSchema,
+  ProjectResponseSchema,
+  ProjectsBoardResponseSchema,
   ReleaseLockResponseSchema,
   TaskSchema,
   ThreadDetailSchema,
@@ -39,6 +43,8 @@ export const queryKeys = {
   today: ['today'] as const,
   settings: ['settings'] as const,
   learning: ['learning'] as const,
+  projectsBoard: ['projects-board'] as const,
+  project: ['project'] as const,
   threadDetail: (threadId: string) => ['thread', threadId, 'detail'] as const,
   messageBody: (threadId: string, messageId: string) =>
     ['thread', threadId, 'body', messageId] as const,
@@ -88,7 +94,20 @@ export async function fetchToday(): Promise<TodayReadModel> {
   return TodayReadModelSchema.parse(await request('/today'));
 }
 
-/** GET the local app settings (stale thresholds, lock timeout, color scheme). */
+/**
+ * GET the assembled projects board — every project's threads grouped by task state (D32). A body-free
+ * LOCAL read model (subject/snippet/sender + state metadata only); the parse enforces that.
+ */
+export async function fetchProjectsBoard(): Promise<ProjectsBoard> {
+  return ProjectsBoardResponseSchema.parse(await request('/projects-board'));
+}
+
+/** GET the configured project's identity (`{ id, name }`); `name` is null when unresolved (D32). */
+export async function fetchProject(): Promise<ProjectResponse> {
+  return ProjectResponseSchema.parse(await request('/project'));
+}
+
+/** GET the local app settings (stale thresholds, lock timeout, color scheme, default view). */
 export async function fetchSettings(): Promise<AppSettings> {
   return AppSettingsSchema.parse(await request('/settings'));
 }

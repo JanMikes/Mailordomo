@@ -31,11 +31,16 @@ import { useSettingsQuery } from './today-hooks';
 
 /* -------------------------------- thread detail -------------------------------- */
 
-/** The body-free left-pane read model for one open thread. */
-export function useThreadDetail(threadId: string) {
+/**
+ * The body-free left-pane read model for one open thread. `enabled` lets a caller hold the hook (Rules
+ * of Hooks) while no thread is selected — e.g. the 3-pane reading pane before a click — without firing
+ * a query for a placeholder id.
+ */
+export function useThreadDetail(threadId: string, enabled = true) {
   return useQuery({
     queryKey: queryKeys.threadDetail(threadId),
     queryFn: () => fetchThreadDetail(threadId),
+    enabled: enabled && threadId !== '',
   });
 }
 

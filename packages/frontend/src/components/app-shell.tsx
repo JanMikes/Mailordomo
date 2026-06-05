@@ -1,9 +1,8 @@
 /**
  * The app shell: a left sidebar (wordmark + primary nav + theme toggle) and the scrollable main
- * surface. "Today" and "Memory" are live views switched through `NavContext`; "All projects" and
- * "3-pane" are visible-but-disabled placeholders for 7c — the 3-pane is the deliberate "never trap the
- * user in the opinionated view" slot (CLAUDE.md / PROJECT.md §11), shown now so the escape hatch is
- * always discoverable.
+ * surface. All four primary views — "Today", "Memory", "All projects" (the projects board), and
+ * "3-pane" (the classic fallback) — are LIVE, switched through `NavContext` (D32). The 3-pane is the
+ * deliberate "never trap the user in the opinionated view" escape hatch (CLAUDE.md / PROJECT.md §11).
  */
 import type { ReactNode } from 'react';
 import { Columns3, Folders, History, ListTodo, Mailbox, type LucideIcon } from 'lucide-react';
@@ -42,14 +41,14 @@ export function AppShell({ children }: { children: ReactNode }) {
     {
       label: 'All projects',
       Icon: Folders,
-      disabled: true,
-      hint: 'Per-project views land in a later phase',
+      active: !onThread && nav.view === 'all-projects',
+      onClick: () => nav.goTo('all-projects'),
     },
     {
       label: '3-pane',
       Icon: Columns3,
-      disabled: true,
-      hint: 'The classic fallback lands in a later phase',
+      active: !onThread && nav.view === 'three-pane',
+      onClick: () => nav.goTo('three-pane'),
     },
   ];
 
