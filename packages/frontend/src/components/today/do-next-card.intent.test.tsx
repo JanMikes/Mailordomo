@@ -3,16 +3,20 @@
  * `do-next-card.test.tsx`. Pins the INLINE-ACTION WIRING and the send-proof surface:
  *  - "Mark done" fires the mark-done mutation with the thread id (a metadata transition);
  *  - "Snooze" fires the snooze mutation with the thread id;
- *  - the "Draft" control is DISABLED / inert — 7a exposes NO draft/send path (Golden rule #1);
+ *  - the "Draft" control opens the 7b work surface with a draft request — it never sends from a card
+ *    (Golden rule #1: sending is only ever an explicit click inside the work surface);
  *  - the card renders only metadata (subject/sender/state/draft-ready), never a message body.
  *
  * The card consumes the React Query mutation hooks internally (not callback props), so we mock
- * `@/lib/today-hooks` and assert the mutation `mutate` calls — i.e. the real action wiring.
+ * `@/lib/today-hooks` and assert the mutation `mutate` calls — i.e. the real action wiring. Navigation
+ * goes through `NavContext`, so we provide a spy controller and assert `openThread`.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { DoNextCard as DoNextCardModel } from '@mailordomo/shared';
+
+import { NavContext, type NavController } from '@/lib/navigation';
 
 const hooks = vi.hoisted(() => ({
   markDone: vi.fn(),
@@ -25,6 +29,20 @@ vi.mock('@/lib/today-hooks', () => ({
 }));
 
 import { DoNextCard } from './do-next-card';
+
+const navSpy = vi.hoisted(() => ({ openThread: vi.fn() }));
+
+function withNav(ui: React.ReactElement) {
+  const controller: NavController = {
+    view: 'today',
+    selectedThreadId: null,
+    draftOnOpen: false,
+    openThread: navSpy.openThread,
+    closeThread: vi.fn(),
+    goTo: vi.fn(),
+  };
+  return <NavContext.Provider value={controller}>{ui}</NavContext.Provider>;
+}
 
 const card: DoNextCardModel = {
   threadId: 'th-42',
@@ -48,6 +66,7 @@ const card: DoNextCardModel = {
 beforeEach(() => {
   hooks.markDone.mockReset();
   hooks.snooze.mockReset();
+  navSpy.openThread.mockReset();
 });
 
 describe('DoNextCard — metadata surface (no body)', () => {
@@ -79,13 +98,15 @@ describe('DoNextCard — inline actions are metadata-only (Golden rule #1)', () 
     expect(hooks.snooze).toHaveBeenCalledWith({ threadId: 'th-42' });
   });
 
-  it('the "Draft" control is disabled/inert while the metadata actions stay active', async () => {
+  it('the "Draft" control opens the work surface with a draft request — and never sends', async () => {
     const user = userEvent.setup();
-    render(<DoNextCard card={card} />);
+    render(withNav(<DoNextCard card={card} />));
 
     const draft = screen.getByRole('button', { name: 'Draft' });
-    expect(draft).toBeDisabled();
-    await user.click(draft); // clicking an inert control must do nothing
+    expect(draft).toBeEnabled();
+    await user.click(draft);
+    // Opening + requesting a draft is the ONLY effect — no metadata mutation, no send path.
+    expect(navSpy.openThread).toHaveBeenCalledWith('th-42', { draft: true });
     expect(hooks.markDone).not.toHaveBeenCalled();
     expect(hooks.snooze).not.toHaveBeenCalled();
 

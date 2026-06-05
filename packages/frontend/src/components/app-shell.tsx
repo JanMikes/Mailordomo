@@ -1,13 +1,15 @@
 /**
  * The app shell: a left sidebar (wordmark + primary nav + theme toggle) and the scrollable main
- * surface. "Today" is the live view; "All projects" and "3-pane" are visible-but-disabled
- * placeholders for 7c — the 3-pane is the deliberate "never trap the user in the opinionated view"
- * slot (CLAUDE.md / PROJECT.md §11), shown now so the escape hatch is always discoverable.
+ * surface. "Today" and "Memory" are live views switched through `NavContext`; "All projects" and
+ * "3-pane" are visible-but-disabled placeholders for 7c — the 3-pane is the deliberate "never trap the
+ * user in the opinionated view" slot (CLAUDE.md / PROJECT.md §11), shown now so the escape hatch is
+ * always discoverable.
  */
 import type { ReactNode } from 'react';
-import { Columns3, Folders, ListTodo, Mailbox, type LucideIcon } from 'lucide-react';
+import { Columns3, Folders, History, ListTodo, Mailbox, type LucideIcon } from 'lucide-react';
 
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { useNav } from '@/lib/navigation';
 import { cn } from '@/lib/utils';
 import { ThemeToggle } from './theme-toggle';
 
@@ -17,25 +19,40 @@ interface NavItem {
   active?: boolean;
   disabled?: boolean;
   hint?: string;
+  onClick?: () => void;
 }
 
-const NAV: readonly NavItem[] = [
-  { label: 'Today', Icon: ListTodo, active: true },
-  {
-    label: 'All projects',
-    Icon: Folders,
-    disabled: true,
-    hint: 'Per-project views land in a later phase',
-  },
-  {
-    label: '3-pane',
-    Icon: Columns3,
-    disabled: true,
-    hint: 'The classic fallback lands in a later phase',
-  },
-];
-
 export function AppShell({ children }: { children: ReactNode }) {
+  const nav = useNav();
+  const onThread = nav.selectedThreadId !== null;
+
+  const items: readonly NavItem[] = [
+    {
+      label: 'Today',
+      Icon: ListTodo,
+      active: !onThread && nav.view === 'today',
+      onClick: () => nav.goTo('today'),
+    },
+    {
+      label: 'Memory',
+      Icon: History,
+      active: !onThread && nav.view === 'memory',
+      onClick: () => nav.goTo('memory'),
+    },
+    {
+      label: 'All projects',
+      Icon: Folders,
+      disabled: true,
+      hint: 'Per-project views land in a later phase',
+    },
+    {
+      label: '3-pane',
+      Icon: Columns3,
+      disabled: true,
+      hint: 'The classic fallback lands in a later phase',
+    },
+  ];
+
   return (
     <div className="bg-background text-foreground flex h-svh">
       <aside className="bg-muted/30 flex w-60 shrink-0 flex-col border-r p-3">
@@ -47,7 +64,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         </div>
 
         <nav className="flex flex-col gap-0.5 pt-3">
-          {NAV.map((item) => (
+          {items.map((item) => (
             <NavRow key={item.label} item={item} />
           ))}
         </nav>
@@ -86,10 +103,13 @@ function NavRow({ item }: { item: NavItem }) {
   }
 
   return (
-    <span
+    <button
+      type="button"
+      onClick={item.onClick}
       aria-current={item.active ? 'page' : undefined}
       className={cn(
         base,
+        'w-full text-left outline-none',
         item.active
           ? 'bg-accent text-accent-foreground'
           : 'text-muted-foreground hover:text-foreground hover:bg-accent/50',
@@ -97,6 +117,6 @@ function NavRow({ item }: { item: NavItem }) {
     >
       <item.Icon className="size-4" aria-hidden />
       {item.label}
-    </span>
+    </button>
   );
 }

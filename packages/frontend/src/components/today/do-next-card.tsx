@@ -3,8 +3,8 @@
  * subject/snippet/sender + task/promise metadata; there is no body to show (Golden rule #3).
  *
  * Inline actions are metadata-only and safe: Mark done (a state transition) and Snooze (a
- * `follow_up_at` write) are live mutations; Open thread is a 7a no-op nav stub; **Draft is a visible
- * but DISABLED stub** — 7a exposes NO send/draft path (Golden rule #1). Drafting/sending arrives in 7b.
+ * `follow_up_at` write) are live mutations. Open thread opens the split work surface (7b); Draft opens
+ * it AND kicks off a draft — both via the nav controller, never a direct send (Golden rule #1).
  */
 import {
   AlarmClock,
@@ -20,6 +20,7 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { useMarkDone, useSnooze } from '@/lib/today-hooks';
+import { useNav } from '@/lib/navigation';
 import { displaySender } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import {
@@ -33,6 +34,7 @@ import {
 export function DoNextCard({ card }: { card: DoNextCardModel }) {
   const markDone = useMarkDone();
   const snooze = useSnooze();
+  const nav = useNav();
   const busy = markDone.isPending || snooze.isPending;
   const hasChips = card.deadline !== null || card.followUpAt !== null || card.staleReason !== null;
 
@@ -75,6 +77,8 @@ export function DoNextCard({ card }: { card: DoNextCardModel }) {
         <InlineActions
           onMarkDone={() => markDone.mutate(card.threadId)}
           onSnooze={() => snooze.mutate({ threadId: card.threadId })}
+          onOpenThread={() => nav.openThread(card.threadId)}
+          onDraft={() => nav.openThread(card.threadId, { draft: true })}
           markDonePending={markDone.isPending}
           snoozePending={snooze.isPending}
         />
@@ -86,6 +90,8 @@ export function DoNextCard({ card }: { card: DoNextCardModel }) {
 interface InlineActionsProps {
   onMarkDone: () => void;
   onSnooze: () => void;
+  onOpenThread: () => void;
+  onDraft: () => void;
   markDonePending: boolean;
   snoozePending: boolean;
 }
@@ -93,6 +99,8 @@ interface InlineActionsProps {
 function InlineActions({
   onMarkDone,
   onSnooze,
+  onOpenThread,
+  onDraft,
   markDonePending,
   snoozePending,
 }: InlineActionsProps) {
@@ -106,14 +114,13 @@ function InlineActions({
         onClick={onSnooze}
         pending={snoozePending}
       />
+      <ActionButton Icon={SquareArrowOutUpRight} label="Open thread" onClick={onOpenThread} />
       <ActionButton
-        Icon={SquareArrowOutUpRight}
-        label="Open thread"
-        onClick={() => {
-          // 7a stub: the split work surface (thread + draft + refine) arrives in Phase 7b.
-        }}
+        Icon={PenLine}
+        label="Draft"
+        tooltip="Open and draft a reply"
+        onClick={onDraft}
       />
-      <DraftActionStub />
     </div>
   );
 }
@@ -147,36 +154,6 @@ function ActionButton({ Icon, label, tooltip, onClick, pending = false }: Action
         </Button>
       </TooltipTrigger>
       <TooltipContent>{tooltip ?? label}</TooltipContent>
-    </Tooltip>
-  );
-}
-
-/**
- * The DISABLED Draft affordance. A real `<button disabled>` (so it is unambiguously inert and has no
- * send path), wrapped in a hoverable/focusable span so its explanatory tooltip still appears even
- * though the button itself takes no pointer events.
- */
-function DraftActionStub() {
-  return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <span
-          tabIndex={0}
-          className="focus-visible:ring-ring/50 inline-flex rounded-md outline-none focus-visible:ring-2"
-        >
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            disabled
-            aria-label="Draft"
-            className="text-muted-foreground/50 pointer-events-none size-8"
-          >
-            <PenLine className="size-4" aria-hidden />
-          </Button>
-        </span>
-      </TooltipTrigger>
-      <TooltipContent>Available when you open the thread</TooltipContent>
     </Tooltip>
   );
 }
