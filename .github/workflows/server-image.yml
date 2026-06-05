@@ -1,0 +1,27 @@
+name: server-image
+
+# Phase 0: runs the identical `npm run verify` gate in CI (the secondary gate; the husky
+# pre-push hook is primary). Phase 2 extends this with a job that builds the metadata-service
+# image and publishes it to GHCR (no deploy step).
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run verify

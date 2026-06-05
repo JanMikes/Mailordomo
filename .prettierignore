@@ -1,0 +1,10 @@
+node_modules/
+dist/
+build/
+coverage/
+package-lock.json
+.husky/
+
+# Hand-formatted docs (intentional wrapping) — do not let Prettier reflow these.
+*.md
+LICENSE

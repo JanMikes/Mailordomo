@@ -1,0 +1,6 @@
+# Fast pre-commit gate (PLAN.md §4.2): typecheck the workspace, then run eslint+prettier and the
+# affected unit tests on the staged set via lint-staged. The full gate runs on pre-push.
+# `set -e` is load-bearing: without it a failing typecheck would not fail the hook.
+set -e
+npm run typecheck
+npx lint-staged

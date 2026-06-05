@@ -1,0 +1,4 @@
+{
+  "*.{ts,tsx}": ["eslint --fix --no-warn-ignored", "prettier --write", "vitest related --run"],
+  "*.{js,mjs,cjs,json,yml,yaml,css,html}": ["prettier --write"]
+}

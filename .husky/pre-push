@@ -1,0 +1,5 @@
+# Full pre-push gate (PLAN.md §4.2): the real barrier before code reaches origin/main.
+# Identical to what a human and CI run. A failure here must be fixed forward — never bypassed
+# with --no-verify.
+set -e
+npm run verify
