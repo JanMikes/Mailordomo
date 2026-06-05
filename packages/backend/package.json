@@ -6,10 +6,21 @@
   "scripts": {
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "build": "tsup src/index.ts --format esm --clean --silent"
+    "build": "tsup src/index.ts --format esm --clean --silent",
+    "verify-mailbox": "node scripts/verify-mailbox.ts"
   },
   "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/mailparser": "^3.4.6",
+    "@types/nodemailer": "^8.0.0",
     "eslint": "*",
     "vitest": "*"
+  },
+  "dependencies": {
+    "@mailordomo/shared": "*",
+    "better-sqlite3": "^12.10.0",
+    "imapflow": "^1.3.6",
+    "mailparser": "^3.9.9",
+    "nodemailer": "^8.0.10"
   }
 }
