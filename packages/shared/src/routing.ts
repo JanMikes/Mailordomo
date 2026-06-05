@@ -37,6 +37,10 @@ export const MODEL_ROUTING = {
   draft: 'opus',
   nudge: 'opus',
   'repo-answer': 'opus',
+  // Silent learning is internal analysis (draft-vs-sent diff / recurring-instruction → tone lesson),
+  // NOT text a recipient reads — Sonnet is correct, and it must NEVER be in the Opus outgoing-text
+  // floor below (adding it there would be wrong; it produces guidance, not an email).
+  learn: 'sonnet',
 } as const satisfies Record<TaskKind, ModelAlias>;
 
 /**

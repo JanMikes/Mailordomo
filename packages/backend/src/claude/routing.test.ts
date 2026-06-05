@@ -35,6 +35,8 @@ const EXPECTED_ROUTING: Record<TaskKind, ModelAlias> = {
   draft: 'opus',
   nudge: 'opus',
   'repo-answer': 'opus',
+  // Silent-learning analysis (Phase 6) — internal memory work, routed to Sonnet (NOT outgoing text).
+  learn: 'sonnet',
 };
 
 describe('model routing — the built argv carries the §4-routed model for each kind', () => {

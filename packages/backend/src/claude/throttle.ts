@@ -40,7 +40,8 @@ export const DEFAULT_USAGE_WINDOW_HOURS = 5;
  * Triage runs on every new inbound message and gates the whole pipeline — starving it would stall
  * state inference, so it is essential. Outgoing-text kinds (`draft`/`nudge`/`repo-answer`) are
  * user-initiated on signal, so over-throttle they should also surface rather than be silently dropped;
- * the deferrable set is the BACKGROUND, non-interactive synthesis work (`summarize`/`digest`/`rank`).
+ * the deferrable set is the BACKGROUND, non-interactive synthesis work (`summarize`/`digest`/`rank`)
+ * plus silent `learn` (Phase 6) — learning must yield to essential triage when the window is hot.
  */
 export const ESSENTIAL_TASK_KINDS: ReadonlySet<TaskKind> = new Set<TaskKind>([
   'triage',

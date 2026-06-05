@@ -75,6 +75,10 @@ export const TASK_KINDS = [
   'draft',
   'nudge',
   'repo-answer',
+  // Silent-learning analysis (Phase 6): turns a recurring instruction or a draft-vs-sent diff into a
+  // durable tone-memory lesson + a changelog summary. INTERNAL memory work, NOT outgoing text — so it
+  // routes to Sonnet (NOT in `OUTGOING_TEXT_TASK_KINDS`) and is DEFERRABLE (not in the essential set).
+  'learn',
 ] as const;
 export const TaskKindSchema = z.enum(TASK_KINDS);
 export type TaskKind = z.infer<typeof TaskKindSchema>;

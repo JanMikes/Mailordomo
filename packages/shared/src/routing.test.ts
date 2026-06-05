@@ -27,6 +27,8 @@ const EXPECTED_ROUTING: Record<TaskKind, ModelAlias> = {
   draft: 'opus',
   nudge: 'opus',
   'repo-answer': 'opus',
+  // Silent-learning analysis (Phase 6) — internal memory work, routed to Sonnet (NOT outgoing text).
+  learn: 'sonnet',
 };
 
 describe('MODEL_ROUTING matches PROJECT.md §4 exactly', () => {
