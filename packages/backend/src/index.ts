@@ -7,10 +7,15 @@
  *  - `cache/`     — the disposable better-sqlite3 + FTS5 index and on-disk `.eml`/attachment store.
  *  - `imap/`      — the imapflow sync engine (injectable client seam, own reconnect, IDLE/poll).
  *  - `claude/`    — the Claude job runner (real/fake), concurrency queue + usage throttle, triage + summarize.
+ *  - `metadata-client/` — the typed HTTP client for the metadata service (Phase 4.5; metadata only,
+ *                   injectable `fetch` seam, zod-validated responses).
+ *  - `api/`       — the thin localhost backend API factory (`createBackendApi`) + wiring checks
+ *                   (Phase 4.5). The runnable `api/server.ts` entry is NOT re-exported (it has a
+ *                   listen side-effect); import it only to start the server.
  *
  * The SMTP send path (`smtp/send`) and the background daemon (`daemon/`) are deliberately NOT
  * re-exported here: they are imported directly where used, preserving the structural no-send
- * boundary (PLAN.md §4.6). The daemon, metadata client and localhost API arrive in Phases 4.5–9.
+ * boundary (PLAN.md §4.6). The daemon arrives in Phase 5+.
  */
 export const BACKEND_NAME = 'mailordomo-backend' as const;
 
@@ -19,3 +24,5 @@ export * from './threading';
 export * from './cache';
 export * from './imap';
 export * from './claude';
+export * from './metadata-client';
+export * from './api';
