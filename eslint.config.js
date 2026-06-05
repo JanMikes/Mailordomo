@@ -46,6 +46,8 @@ const NO_SEND_FROM_DAEMON =
   'Golden rule #1: the daemon must never import the SMTP send path (static, dynamic, or via barrel). Sending is ALWAYS manual. (PLAN.md §4.6)';
 const NO_DAEMON_FROM_SMTP =
   'Golden rule #1: the SMTP send path must never import the daemon. Keep the modules separate. (PLAN.md §4.6)';
+const NO_SEND_FROM_LEARNING =
+  'Golden rule #1: silent learning must never import the SMTP send path (static, dynamic, or via barrel). Learning runs after a send and only edits tone memory — it can never transmit. (PLAN.md §4.6 / Phase 6)';
 
 export default tseslint.config(
   {
@@ -94,6 +96,29 @@ export default tseslint.config(
         {
           selector: "CallExpression[callee.name='require'] > Literal[value=/(^|\\/)smtp(\\/|$)/]",
           message: NO_SEND_FROM_DAEMON,
+        },
+      ],
+    },
+  },
+  // STRUCTURAL NO-SEND GUARD (Phase 6) — silent learning may never reach the SMTP module either.
+  // Learning runs AFTER a send and must be structurally incapable of transmitting (it only edits tone
+  // markdown + writes a changelog). Same coverage as the daemon: static, dynamic import(), require().
+  {
+    files: ['packages/backend/src/learning/**/*.{ts,tsx}'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        { patterns: [{ group: SMTP_PATTERNS, message: NO_SEND_FROM_LEARNING }] },
+      ],
+      'no-restricted-syntax': [
+        'error',
+        {
+          selector: 'ImportExpression > Literal[value=/(^|\\/)smtp(\\/|$)/]',
+          message: NO_SEND_FROM_LEARNING,
+        },
+        {
+          selector: "CallExpression[callee.name='require'] > Literal[value=/(^|\\/)smtp(\\/|$)/]",
+          message: NO_SEND_FROM_LEARNING,
         },
       ],
     },

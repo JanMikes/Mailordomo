@@ -7,6 +7,10 @@
  *  - `cache/`     — the disposable better-sqlite3 + FTS5 index and on-disk `.eml`/attachment store.
  *  - `imap/`      — the imapflow sync engine (injectable client seam, own reconnect, IDLE/poll).
  *  - `claude/`    — the Claude job runner (real/fake), concurrency queue + usage throttle, triage + summarize.
+ *  - `tone/`      — layered tone memory (PURE resolver + PURE LWW reconciler) + the local store +
+ *                   cross-machine LWW sync (Phase 6). Tone files live OUTSIDE the disposable cache.
+ *  - `learning/`  — silent, logged, revertable continuous learning (Phase 6): PURE signals + the
+ *                   Sonnet `learn` job + the local changelog. No import path to the send module.
  *  - `metadata-client/` — the typed HTTP client for the metadata service (Phase 4.5; metadata only,
  *                   injectable `fetch` seam, zod-validated responses).
  *  - `api/`       — the thin localhost backend API factory (`createBackendApi`) + wiring checks
@@ -24,5 +28,7 @@ export * from './threading';
 export * from './cache';
 export * from './imap';
 export * from './claude';
+export * from './tone';
+export * from './learning';
 export * from './metadata-client';
 export * from './api';

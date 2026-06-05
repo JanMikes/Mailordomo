@@ -22,6 +22,8 @@ export const PROMPT_FILES = {
   draft: 'draft.md',
   digest: 'digest.md',
   nudge: 'nudge.md',
+  // Silent-learning (Phase 6) tone-memory update prompt (Sonnet, `--json-schema`).
+  learn: 'learn.md',
 } as const;
 
 export type PromptName = keyof typeof PROMPT_FILES;

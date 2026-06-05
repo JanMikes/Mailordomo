@@ -38,24 +38,33 @@ import type {
   AcquireLockRequest,
   AcquireLockResponse,
   AuthedProject,
+  CreateLearningEntryRequest,
   CreateTaskRequest,
+  LearningEntry,
   Lock,
+  PutToneFileRequest,
+  PutToneFileResponse,
   RefreshLockRequest,
   ReleaseLockRequest,
   ReleaseLockResponse,
   Task,
   Thread,
+  ToneFile,
   UpsertThreadRequest,
 } from '@mailordomo/shared';
 import {
   AcquireLockResponseSchema,
   ApiErrorSchema,
+  LearningEntryListResponseSchema,
+  LearningEntrySchema,
   LockSchema,
   PairResponseSchema,
+  PutToneFileResponseSchema,
   TaskListResponseSchema,
   TaskSchema,
   ThreadListResponseSchema,
   ThreadSchema,
+  ToneFileListResponseSchema,
   ReleaseLockResponseSchema,
 } from '@mailordomo/shared';
 import { MetadataAuthError, MetadataError, MetadataValidationError } from './errors';
@@ -179,6 +188,54 @@ export class MetadataClient {
   async listLocks(): Promise<Lock[]> {
     const res = await this.request('GET', '/locks');
     return this.parse(res, LockSchema.array());
+  }
+
+  /* ----------------------- Tone files (LWW per file) ------------------------ */
+
+  /**
+   * Push a tone-memory file (`PUT /tone`). The SERVER arbitrates last-write-wins per file (Golden
+   * rule #2 — the server is the sole arbiter, never a two-way merge): `accepted` is the verdict and
+   * `file` is ALWAYS the post-resolution authoritative version the caller must adopt LOCALLY (whole
+   * file, never a field merge). `content` is the sanctioned derived-memory field; this is the second
+   * (and only other) thing besides `LearningEntry.summary` that Phase 6 may send across the boundary.
+   */
+  async putToneFile(req: PutToneFileRequest): Promise<PutToneFileResponse> {
+    const res = await this.request('PUT', '/tone', req);
+    return this.parse(res, PutToneFileResponseSchema);
+  }
+
+  /** List every tone file the server holds for this project (the pull side of LWW sync). */
+  async listToneFiles(): Promise<ToneFile[]> {
+    const res = await this.request('GET', '/tone');
+    return this.parse(res, ToneFileListResponseSchema);
+  }
+
+  /* --------------------- Learning changelog (revertable) -------------------- */
+
+  /**
+   * Record one silent-learning changelog entry (`POST /learning`). The request carries ONLY a short
+   * `summary` (never a draft/message body — the before/after tone snapshots stay LOCAL for revert);
+   * the server assigns `id` + `applied_at` and returns the created {@link LearningEntry}.
+   */
+  async createLearningEntry(req: CreateLearningEntryRequest): Promise<LearningEntry> {
+    const res = await this.request('POST', '/learning', req);
+    return this.parse(res, LearningEntrySchema);
+  }
+
+  /** List the project's learning changelog (applied + reverted entries). */
+  async listLearningEntries(): Promise<LearningEntry[]> {
+    const res = await this.request('GET', '/learning');
+    return this.parse(res, LearningEntryListResponseSchema);
+  }
+
+  /**
+   * Revert a learning entry by id (`POST /learning/:id/revert`, empty strict body). Sets `reverted_at`
+   * server-side; idempotent. Reverting the local tone-file CONTENT from the before-snapshot is the
+   * caller's job (see `learning/learn.ts`) — this only flips the shared changelog flag.
+   */
+  async revertLearningEntry(id: string): Promise<LearningEntry> {
+    const res = await this.request('POST', `/learning/${encodeURIComponent(id)}/revert`, {});
+    return this.parse(res, LearningEntrySchema);
   }
 
   /* ------------------------------- Internals -------------------------------- */
