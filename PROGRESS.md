@@ -7,6 +7,46 @@
 
 ---
 
+## 2026-06-05 — Phase 0: scaffold + quality gates
+
+**What I did**
+- **Verified the load-bearing native dep first:** `better-sqlite3` 12.10.0 installs a prebuilt
+  arm64 binary on Node 25 (no source compile), with **FTS5 + WAL** both working. The user's flagged
+  risk is clear — proceeded without needing Xcode CLT (present anyway). (D16)
+- Scaffolded the gated npm-workspaces monorepo: `shared`/`server`/`backend`/`frontend`, strict
+  TypeScript 6, ESLint 10 flat + Prettier, Vitest 4, Vite 8 + React 19, tsup bundling. Each package
+  has a smoke test so `verify` exercises the whole pipeline.
+- Built the quality gate: root `npm run verify` (typecheck+lint+test+build), husky pre-commit
+  (typecheck + lint-staged) and pre-push (full verify), CI workflow running the identical verify.
+- Established the **structural no-send guard** (Golden rule #1): ESLint rule forbidding any import
+  path between the daemon and the SMTP module, plus a daemon/smtp module skeleton.
+- Three-role split honored: implemented directly (foundational tooling), then an **independent
+  reviewer** (fresh context) audited Phase 0. Acted on its findings (see below).
+- `verify` green: **exit 0, 14 tests / 6 files.** Committed (6c17d8d) + this hardening commit.
+
+**What's half-done**
+- Nothing half-done. Phase 0 DoD fully met. Packages are skeletons by design — real contracts/code
+  land Phase 1+.
+
+**Next**
+- **Phase 1 — shared types & contracts** (zod schemas + inferred types + model-routing constants).
+  This is the synchronization point that unblocks Phases 2/3/4 to run as parallel subagents.
+
+**Surprises/decisions**
+- **Caught a real gate bug:** hooks lacked `set -e`, so a failing `npm run typecheck` did **not**
+  fail the pre-commit hook (last command's exit wins). Fixed; re-proved the hook blocks a broken
+  staged file (exit 2) and passes clean (exit 0). This is exactly why "prove the gate gates" exists. (D19)
+- **Reviewer's best find:** `no-restricted-imports` is static-only — a daemon `await
+  import('../smtp/send')` would bypass it. Hardened the guard to also forbid dynamic `import()`/
+  `require` and the whole `smtp/` subtree (both directions); added bypass tests. (D18)
+- Toolchain resolved to current majors: ESLint 10, **TypeScript 6** (deprecates `baseUrl`/`paths` →
+  switched to workspace symlinks + `exports` for `@mailordomo/*` resolution, D17), Vitest 4, Vite 8,
+  React 19, @types/node 25.
+- Kept `skipLibCheck: true` (deliberate; near-universal for app code, load-bearing once Hono/zod
+  land in Phase 2).
+
+---
+
 ## 2026-06-05 — Planning + approval + plan refinements
 
 **What I did**

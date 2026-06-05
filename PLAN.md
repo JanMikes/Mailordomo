@@ -501,6 +501,25 @@ Lucide, **REST + WebSocket** client to the backend, React Query, light/dark, sen
   backend↔server↔frontend wiring (end-to-end cache rebuild + cross-instance lock visibility).
 - **D14** *(refinement)* **Phase 7 split** into 7a (Today + do-next), 7b (split work surface +
   refine), 7c (3-pane + project views) for smaller reviewable diffs.
+- **D15** *(Phase 0)* **Root `lint` is a single ESLint+Prettier pass** over the whole monorepo
+  (`eslint . && prettier --check .`), not the per-workspace fan-out sketched in §4.1. One flat
+  config covers all packages + root docs in one pass; fanning out would re-resolve the same config
+  N times and miss root-level files. `typecheck`/`test`/`build` still fan out per workspace.
+- **D16** *(Phase 0)* **better-sqlite3 verified on Node 25** before scaffolding: v12.10.0 installs a
+  **prebuilt arm64 binary** (no source compile), and **FTS5 + WAL** both work (SQLite 3.53.1). The
+  load-bearing native dep is green on the dev machine; Xcode CLT is present as a fallback.
+- **D17** *(Phase 0)* **Cross-package TS resolution via workspace symlinks + package `exports`**
+  (no tsconfig `baseUrl`/`paths`, which TS 6 deprecates). `moduleResolution: "bundler"` resolves
+  `@mailordomo/*` through `node_modules` symlinks to each package's `src/index.ts`.
+- **D18** *(Phase 0, hardened after review)* **Structural no-send guard covers the whole `smtp/`
+  subtree and dynamic `import()`/`require`**, both directions — not just `send`/`transport` static
+  imports. `no-restricted-imports` catches static imports; a `no-restricted-syntax` rule catches
+  dynamic `import()`/`require` (which the former cannot see). The daemon has no legitimate reason
+  to import anything under `smtp/`, so the whole subtree is forbidden (also closing barrel
+  re-export holes). Defense in depth for Golden rule #1; behavioral tests still come in Phases 5/9.
+- **D19** *(Phase 0)* **Hook scripts use `set -e`** — without it a failing `npm run typecheck`
+  would not fail the pre-commit hook (the last command's exit code wins). Caught empirically while
+  proving the gate gates.
 
 ---
 
@@ -510,7 +529,7 @@ Lucide, **REST + WebSocket** client to the backend, React Query, light/dark, sen
 reviewer before moving on.)*
 
 - [x] **Planning** — `PROJECT.md` + `PLAN.md` authored, committed, **approved with refinements**.
-- [ ] **Phase 0** — scaffold + quality gates (incl. structural send guard) + `PROGRESS.md` + docs
+- [x] **Phase 0** — scaffold + quality gates (incl. structural send guard) + `PROGRESS.md` + docs ✅
 - [ ] **Phase 1** — shared types & contracts
 - [ ] **Phase 2** — metadata service (+ Docker + GHCR)
 - [ ] **Phase 3** — transport + cache + state machine + folder mirroring
@@ -526,6 +545,41 @@ reviewer before moving on.)*
 - [ ] **Phase 9** — digest + E2E + polish + launchd + docs
 
 > Per-session notes live in `PROGRESS.md` (§4.7); per-phase reviewer notes are appended here.
+
+### Phase 0 review (independent reviewer, fresh context)
+
+**Verdict:** PASS-WITH-CONCERNS → concerns addressed; **`npm run verify` green (exit 0), 14 tests
+across 6 files** (backend 11: index 2 + gate 2 + sendguard 7; shared/server/frontend 1 each).
+
+**All Phase 0 deliverables present:** npm workspaces (shared/server/backend/frontend, each with a
+smoke test); strict `tsconfig.base.json`; ESLint flat + Prettier; Vitest; husky pre-commit +
+pre-push; root `verify`; `refresh-fixtures` scaffold; `.nvmrc` (22); `.env.example`; `README.md`;
+`PROGRESS.md` seeded; structural no-send guard + daemon/smtp skeleton; CI workflow (verify only).
+
+**Acted on (this session):**
+- **Hardened the no-send guard** (reviewer's top adversarial finding): static `no-restricted-imports`
+  only sees static imports, so a daemon `await import('../smtp/send')` would have slipped past. Now
+  a `no-restricted-syntax` rule also forbids dynamic `import()`/`require`; the whole `smtp/` subtree
+  is forbidden from the daemon (closing barrel re-export holes); the reverse guard was broadened
+  from two filenames to `smtp/**`. Added bypass tests (dynamic import, barrel) — sendguard is now 7
+  cases incl. two positive controls. (→ D18)
+- **Declared workspace test deps** (`vitest` in all four, `eslint` in backend, which imports it in
+  tests) so packages are honest about deps and survive isolated builds. (Finding 4)
+- **Fixed a real gate bug caught empirically:** hooks lacked `set -e`, so a failing typecheck did
+  not fail the pre-commit hook. Added `set -e`; re-demonstrated the hook blocks a type-broken
+  staged file (exit 2) and passes a clean tree (exit 0). (→ D19)
+
+**Kept (with rationale):** `skipLibCheck: true` — near-universal for application (non-library) code
+and load-bearing once Phase 2 pulls in Hono/zod/better-sqlite3 types (avoids being broken by
+third-party `.d.ts`). Deliberate, not an oversight.
+
+**Deferred / recorded for later:**
+- `gate.test.ts` typechecks an isolated temp file (proves `tsc` catches type errors) rather than
+  the project config chain — a nit; the per-workspace `extends` of the strict base is low-risk.
+- **Phase 2 prerequisite:** the server Docker image must build with `shared` consumed as **TS
+  source** — the server bundle (tsup/esbuild) **inlines** `shared` via the workspace symlink +
+  `exports`, so no separate `shared` build is needed; declare `typescript`/`tsup`/`better-sqlite3`
+  on the server package when wiring the image.
 
 ---
 

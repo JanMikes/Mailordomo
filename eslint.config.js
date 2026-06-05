@@ -7,32 +7,45 @@ import globals from 'globals';
  * Flat ESLint config for the Mailordomo monorepo.
  *
  * The load-bearing rule here is the STRUCTURAL NO-SEND GUARD (Golden rule #1 / PLAN.md §4.6):
- * the background daemon must have no import path to the SMTP send module, and vice-versa.
- * A violation fails `lint` and therefore the pre-commit/pre-push gate before tests even run.
+ * the background daemon must have NO import path to the SMTP module, and the SMTP module must not
+ * import the daemon. A violation fails `lint` and therefore the pre-commit/pre-push gate before
+ * tests even run. The guard covers BOTH static imports (`no-restricted-imports`) and dynamic
+ * `import()` / `require()` (`no-restricted-syntax`), since the former only sees static imports —
+ * a daemon doing `await import('../smtp/send')` would otherwise slip past.
+ *
+ * The daemon has no legitimate reason to touch anything under `smtp/`, so the whole `smtp/` subtree
+ * is forbidden (not just `send`/`transport`) — that also closes barrel re-export holes
+ * (`import '../smtp'` resolving to a `smtp/index.ts` that re-exports `send`).
  */
 
-// Import-source patterns that reach the SMTP send path from anywhere in the tree.
-const SEND_PATH_PATTERNS = [
-  '**/smtp/send',
-  '**/smtp/send.*',
-  '**/smtp/transport',
-  '**/smtp/transport.*',
-  '../smtp/send',
-  '../smtp/transport',
-  '@mailordomo/backend/smtp/send',
-  '@mailordomo/backend/smtp/send.*',
-  '@mailordomo/backend/smtp/transport',
+// Import-source patterns reaching the SMTP module from anywhere in the tree.
+const SMTP_PATTERNS = [
+  '**/smtp',
+  '**/smtp/**',
+  '../smtp',
+  '../smtp/**',
+  '../../smtp',
+  '../../smtp/**',
+  '@mailordomo/backend/smtp',
+  '@mailordomo/backend/smtp/*',
 ];
 
-// Import-source patterns that reach the daemon from anywhere in the tree.
+// Import-source patterns reaching the daemon from anywhere in the tree.
 const DAEMON_PATTERNS = [
   '**/daemon',
   '**/daemon/**',
   '../daemon',
   '../daemon/**',
+  '../../daemon',
+  '../../daemon/**',
   '@mailordomo/backend/daemon',
   '@mailordomo/backend/daemon/*',
 ];
+
+const NO_SEND_FROM_DAEMON =
+  'Golden rule #1: the daemon must never import the SMTP send path (static, dynamic, or via barrel). Sending is ALWAYS manual. (PLAN.md §4.6)';
+const NO_DAEMON_FROM_SMTP =
+  'Golden rule #1: the SMTP send path must never import the daemon. Keep the modules separate. (PLAN.md §4.6)';
 
 export default tseslint.config(
   {
@@ -64,46 +77,49 @@ export default tseslint.config(
     files: ['packages/frontend/**/*.{ts,tsx}'],
     languageOptions: { globals: { ...globals.browser } },
   },
-  // STRUCTURAL NO-SEND GUARD — the daemon may never import the SMTP send path.
+  // STRUCTURAL NO-SEND GUARD — the daemon may never reach the SMTP module.
   {
     files: ['packages/backend/src/daemon/**/*.{ts,tsx}'],
     rules: {
       'no-restricted-imports': [
         'error',
+        { patterns: [{ group: SMTP_PATTERNS, message: NO_SEND_FROM_DAEMON }] },
+      ],
+      'no-restricted-syntax': [
+        'error',
         {
-          patterns: [
-            {
-              group: SEND_PATH_PATTERNS,
-              message:
-                'Golden rule #1: the daemon must never import the SMTP send path. Sending is ALWAYS manual. (PLAN.md §4.6)',
-            },
-          ],
+          selector: 'ImportExpression > Literal[value=/(^|\\/)smtp(\\/|$)/]',
+          message: NO_SEND_FROM_DAEMON,
+        },
+        {
+          selector: "CallExpression[callee.name='require'] > Literal[value=/(^|\\/)smtp(\\/|$)/]",
+          message: NO_SEND_FROM_DAEMON,
         },
       ],
     },
   },
-  // Reverse guard — the SMTP send path may never import the daemon.
+  // Reverse guard — the entire SMTP module may never import the daemon.
   {
-    files: [
-      'packages/backend/src/smtp/send.{ts,tsx}',
-      'packages/backend/src/smtp/transport.{ts,tsx}',
-    ],
+    files: ['packages/backend/src/smtp/**/*.{ts,tsx}'],
     rules: {
       'no-restricted-imports': [
         'error',
+        { patterns: [{ group: DAEMON_PATTERNS, message: NO_DAEMON_FROM_SMTP }] },
+      ],
+      'no-restricted-syntax': [
+        'error',
         {
-          patterns: [
-            {
-              group: DAEMON_PATTERNS,
-              message:
-                'Golden rule #1: the SMTP send path must never import the daemon. Keep the modules separate. (PLAN.md §4.6)',
-            },
-          ],
+          selector: 'ImportExpression > Literal[value=/(^|\\/)daemon(\\/|$)/]',
+          message: NO_DAEMON_FROM_SMTP,
+        },
+        {
+          selector: "CallExpression[callee.name='require'] > Literal[value=/(^|\\/)daemon(\\/|$)/]",
+          message: NO_DAEMON_FROM_SMTP,
         },
       ],
     },
   },
-  // Test files may use dev-only patterns.
+  // Test files and fixtures may use dev-only patterns.
   {
     files: ['**/*.test.{ts,tsx}', '**/__fixtures__/**'],
     rules: {

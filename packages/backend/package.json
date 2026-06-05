@@ -7,5 +7,9 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "build": "tsup src/index.ts --format esm --clean --silent"
+  },
+  "devDependencies": {
+    "eslint": "*",
+    "vitest": "*"
   }
 }

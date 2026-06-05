@@ -4,11 +4,10 @@ import { ESLint } from 'eslint';
 import { describe, expect, it } from 'vitest';
 
 /**
- * Proves the STRUCTURAL NO-SEND GUARD (Golden rule #1 / PLAN.md §4.6) actually trips.
- *
- * We lint in-memory source as if it lived at a given path under the backend, using the repo's
- * real `eslint.config.js`. No violating file is committed to disk; `lintText` applies the
- * file-pattern overrides by the provided `filePath`, so the daemon/send-path rules engage.
+ * Proves the STRUCTURAL NO-SEND GUARD (Golden rule #1 / PLAN.md §4.6) actually trips, including
+ * the bypasses a naive `no-restricted-imports`-only rule would miss: dynamic `import()` and barrel
+ * re-exports. We lint in-memory source as if it lived at a given path under the backend, using the
+ * repo's real `eslint.config.js`. No violating file is committed to disk.
  */
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -23,34 +22,75 @@ async function lintAsFile(relPathFromRepoRoot: string, code: string) {
   return result;
 }
 
-function restrictedImportMessages(result: { messages: { ruleId: string | null }[] }) {
-  return result.messages.filter((m) => m.ruleId === 'no-restricted-imports');
+/** Violations from either guard rule (static imports or dynamic import/require syntax). */
+function guardViolations(result: { messages: { ruleId: string | null }[] }) {
+  return result.messages.filter(
+    (m) => m.ruleId === 'no-restricted-imports' || m.ruleId === 'no-restricted-syntax',
+  );
 }
 
+const DAEMON_FILE = 'packages/backend/src/daemon/__guard_fixture__.ts';
+const SMTP_FILE = 'packages/backend/src/smtp/__guard_fixture__.ts';
+
 describe('structural no-send guard (Golden rule #1 / PLAN.md §4.6)', () => {
-  it('FAILS lint when daemon code imports the SMTP send path', async () => {
+  it('FAILS when daemon code statically imports the SMTP send path', async () => {
     const result = await lintAsFile(
-      'packages/backend/src/daemon/__guard_fixture__.ts',
+      DAEMON_FILE,
       `import { assertManualSendOnly } from '../smtp/send';\nexport const x = assertManualSendOnly;\n`,
     );
-    expect(restrictedImportMessages(result).length).toBeGreaterThan(0);
+    expect(guardViolations(result).length).toBeGreaterThan(0);
     expect(result.errorCount).toBeGreaterThan(0);
   });
 
-  it('FAILS lint when the SMTP send path imports the daemon', async () => {
+  it('FAILS when daemon code DYNAMICALLY imports the SMTP send path', async () => {
     const result = await lintAsFile(
-      'packages/backend/src/smtp/send.ts',
+      DAEMON_FILE,
+      `export async function load() {\n  return import('../smtp/send');\n}\n`,
+    );
+    expect(guardViolations(result).length).toBeGreaterThan(0);
+    expect(result.errorCount).toBeGreaterThan(0);
+  });
+
+  it('FAILS when daemon code imports the SMTP barrel (re-export hole)', async () => {
+    const result = await lintAsFile(
+      DAEMON_FILE,
+      `import * as smtp from '../smtp';\nexport const x = smtp;\n`,
+    );
+    expect(guardViolations(result).length).toBeGreaterThan(0);
+    expect(result.errorCount).toBeGreaterThan(0);
+  });
+
+  it('FAILS when the SMTP module statically imports the daemon', async () => {
+    const result = await lintAsFile(
+      SMTP_FILE,
       `import { DAEMON_NAME } from '../daemon/index';\nexport const y = DAEMON_NAME;\n`,
     );
-    expect(restrictedImportMessages(result).length).toBeGreaterThan(0);
+    expect(guardViolations(result).length).toBeGreaterThan(0);
     expect(result.errorCount).toBeGreaterThan(0);
   });
 
-  it('ALLOWS daemon code that does not import the send path', async () => {
+  it('FAILS when the SMTP module DYNAMICALLY imports the daemon', async () => {
+    const result = await lintAsFile(
+      SMTP_FILE,
+      `export async function load() {\n  return import('../daemon/index');\n}\n`,
+    );
+    expect(guardViolations(result).length).toBeGreaterThan(0);
+    expect(result.errorCount).toBeGreaterThan(0);
+  });
+
+  it('ALLOWS daemon code that does not touch the SMTP module', async () => {
     const result = await lintAsFile(
       'packages/backend/src/daemon/__guard_fixture_ok__.ts',
       `export const ok = true as const;\n`,
     );
-    expect(restrictedImportMessages(result).length).toBe(0);
+    expect(guardViolations(result).length).toBe(0);
+  });
+
+  it('ALLOWS the daemon to dynamically import an unrelated module (guard is not over-broad)', async () => {
+    const result = await lintAsFile(
+      'packages/backend/src/daemon/__guard_fixture_ok2__.ts',
+      `export async function load() {\n  return import('node:fs');\n}\n`,
+    );
+    expect(guardViolations(result).length).toBe(0);
   });
 });
