@@ -520,6 +520,15 @@ Lucide, **REST + WebSocket** client to the backend, React Query, light/dark, sen
 - **D19** *(Phase 0)* **Hook scripts use `set -e`** — without it a failing `npm run typecheck`
   would not fail the pre-commit hook (the last command's exit code wins). Caught empirically while
   proving the gate gates.
+- **D20** *(Phase 1)* **Shared contracts are zod 4.4.3 schemas** in `packages/shared`, the single
+  cross-boundary source of truth; snake_case fields mirror PROJECT.md §5; the inferred Promise type
+  is named **`PromiseRecord`** to avoid shadowing the global `Promise`. **Privacy (Golden rule #3)
+  is enforced by construction:** every server-bound payload is a `z.strictObject` (incl. nested),
+  so an undeclared email/draft-body key fails `parse()` before it can be serialized; the two
+  sanctioned exceptions (`Note.body`, `ToneFile.content`) are declared fields. **The model-routing
+  floor (Golden rule #6) guards all three Opus-tier kinds** — `draft`, `nudge`, **and**
+  `repo-answer` (compile-time `OUTGOING_TEXT_MODELS` + runtime `assertOutgoingTextRouting` +
+  self-check on import); corrected after review from the implementer's narrower draft/nudge-only set.
 
 ---
 
@@ -530,7 +539,7 @@ reviewer before moving on.)*
 
 - [x] **Planning** — `PROJECT.md` + `PLAN.md` authored, committed, **approved with refinements**.
 - [x] **Phase 0** — scaffold + quality gates (incl. structural send guard) + `PROGRESS.md` + docs ✅
-- [ ] **Phase 1** — shared types & contracts
+- [x] **Phase 1** — shared types & contracts ✅
 - [ ] **Phase 2** — metadata service (+ Docker + GHCR)
 - [ ] **Phase 3** — transport + cache + state machine + folder mirroring
 - [ ] **🛑 Phase 3 HUMAN CHECKPOINT** — live one-mailbox read-only verification (mandatory stop)
@@ -580,6 +589,37 @@ third-party `.d.ts`). Deliberate, not an oversight.
   source** — the server bundle (tsup/esbuild) **inlines** `shared` via the workspace symlink +
   `exports`, so no separate `shared` build is needed; declare `typescript`/`tsup`/`better-sqlite3`
   on the server package when wiring the image.
+
+### Phase 1 review (independent reviewer, fresh context)
+
+**Verdict:** PASS-WITH-CONCERNS → both concerns fixed; **`npm run verify` green (exit 0), 845 tests**
+(shared **832**, backend 11, frontend 1, server 1). Implemented by one subagent, tested by a
+**separate** subagent that derived invariants from PROJECT.md intent and proved them
+non-tautological via a mutation check (dropping the snippet bound failed exactly the snippet tests).
+
+**All 11 PROJECT.md §5 entities present** with correct fields; zod **4.4.3**; clean module layout
+(primitives/enums/entities/digest/api/routing/states/privacy).
+
+**Adversarial privacy probe came back clean (the key result):** every object schema is
+`z.strictObject` (zero `z.object`), **all nested schemas are also strict**, `.omit()` preserves
+strictness, `DraftMeta` is body-free, and the forbidden-key matrix is exhaustive over the outbound
+surface (29 strict contracts × every forbidden key). Golden rule #3 is enforced by construction.
+
+**Acted on (this session):**
+- **Routing floor extended to `repo-answer`** (reviewer's MAJOR finding): §4 / Golden rule #6 name
+  drafts and repo-aware answers together as the Opus tier; the rule says "outgoing-text generation"
+  and a repo answer is model-generated text. The implementer had narrowed the guard to draft/nudge
+  via a code comment — a spec deviation. Now all three are guarded (compile-time + runtime +
+  self-check), with a tampered-map test. (→ D20)
+- **Entity count corrected** 12→11: `LocalRepoConfig` is machine-local, not a §5 server entity
+  (`isEntity=false`), with a test asserting that classification.
+- **Transition-mode coverage hardened:** `waiting→done`, `follow-up→done`, `done→needs-reply` are
+  asserted `propose` (no silent auto-close/reopen) per §6.
+- **Forbidden-key list extended** with refine-chat/transcript keys (local-only per §5).
+
+**Deferred / noted:** `subject` is unbounded (a sanctioned shared field; a cap is an open product
+question, not a contract violation); transition *legality* is enforced by the Phase 3 state machine,
+not the wire DTO (intentional separation). Branded ID types deferred as an additive enhancement.
 
 ---
 

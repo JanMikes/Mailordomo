@@ -7,6 +7,40 @@
 
 ---
 
+## 2026-06-05 — Phase 1: shared types & contracts
+
+**What I did**
+- Built `packages/shared` — the single cross-boundary source of truth — via the full three-role
+  split: an **implementer** subagent wrote the zod 4.4.3 contracts; a **separate test-author**
+  subagent (fresh context) derived invariants from PROJECT.md intent and wrote the suite; an
+  independent **reviewer** subagent audited the diff. I read the load-bearing modules myself
+  (routing/states/privacy) since this is the keystone every later phase imports.
+- Contracts: primitives, enums (closed vocabularies), 11 §5 entities (all `z.strictObject`),
+  digest read models, metadata-API request/response DTOs, fixed model routing, and the task-state
+  transition table as data with auto/propose modes.
+- **`npm run verify` green: exit 0, 845 tests** (shared 832, incl. a 700+-case privacy matrix).
+
+**What's half-done**
+- Nothing. Phase 1 DoD met. This is the synchronization point — Phases 2 (server), 3 (transport),
+  and 4 (job runner) can now proceed as parallel subagent workstreams against these contracts.
+
+**Next**
+- **Phase 2 — metadata service** (Hono + better-sqlite3 WAL + repo layer + bearer auth + locks +
+  tone-file LWW + Dockerfile + GHCR workflow) and **Phase 3 — transport/cache/state machine** can
+  start in parallel. Phase 3 ends at the **mandatory mailbox checkpoint** (live one-mailbox
+  read-only verification) — the one sanctioned stop.
+
+**Surprises/decisions**
+- **Privacy is enforced structurally, not by convention:** every server-bound payload is a strict
+  zod object (incl. nested), so a stray email/draft-body key fails `parse()`. The reviewer's
+  adversarial probe (non-strict nested schema? `.omit()` leak?) came back clean. (D20)
+- **Reviewer caught a golden-rule narrowing:** the implementer excluded `repo-answer` from the
+  Opus floor guard via a comment ("not outgoing email"), but Golden rule #6 says "outgoing-text
+  generation" and §4 pairs drafts with repo answers. Fixed — all three Opus-tier kinds are guarded.
+- Inferred Promise type named `PromiseRecord` to avoid shadowing the global `Promise`.
+
+---
+
 ## 2026-06-05 — Phase 0: scaffold + quality gates
 
 **What I did**
