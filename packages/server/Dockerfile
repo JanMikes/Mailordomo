@@ -20,6 +20,10 @@ RUN apt-get update \
   && apt-get install -y --no-install-recommends python3 build-essential \
   && rm -rf /var/lib/apt/lists/*
 
+# Pin npm 11 to match the lockfile generator: the repo's lock is npm-11, but node:22 ships npm 10,
+# whose `npm ci` would reject the npm-11 lock as out of sync.
+RUN npm install -g npm@11
+
 # Install deps first (cached until a manifest or the lockfile changes). npm ci validates the
 # lockfile against EVERY workspace, so all workspace manifests must be present.
 COPY package.json package-lock.json tsconfig.base.json ./
