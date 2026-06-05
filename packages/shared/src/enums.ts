@@ -93,3 +93,36 @@ export type Actor = z.infer<typeof ActorSchema>;
 
 /** Actor value recorded when Claude/the background daemon performs an action (default). */
 export const AUTOMATED_ACTOR = 'claude';
+
+/**
+ * Categorical urgency LABEL of a dated commitment, surfaced on the Today do-next cards
+ * (PROJECT.md §8/§11). Derived from a promise's resolved deadline relative to "now":
+ *  - `overdue`   — past its `due_at` (most urgent),
+ *  - `due-soon`  — a future deadline within the next 48h,
+ *  - `dated`     — a future deadline further out,
+ *  - `undated`   — a live commitment with no resolved date.
+ * This is a DISPLAY vocabulary only; the ranker still orders by the precise numeric urgency, so the
+ * label and the ordering can never disagree on which band a card is in.
+ */
+export const URGENCY_LABELS = ['overdue', 'due-soon', 'dated', 'undated'] as const;
+export const UrgencyLabelSchema = z.enum(URGENCY_LABELS);
+export type UrgencyLabel = z.infer<typeof UrgencyLabelSchema>;
+
+/**
+ * Why a thread is STALE (the pure `detectStale` engine in `backend/engines/stale.ts`). This is the
+ * SINGLE SOURCE OF TRUTH for the vocabulary: the backend engine imports this union rather than
+ * declaring its own, so the contract and the detector can never drift. Each value maps to UI copy +
+ * which action the Today card offers:
+ *  - `follow-up-deadline-passed` — a follow-up/hard deadline has elapsed,
+ *  - `awaiting-reply-too-long`   — `waiting` with no deadline, silent past the threshold,
+ *  - `in-follow-up-state`        — already flagged to chase (act now),
+ *  - `unanswered-too-long`       — `needs-reply`/`drafted` I'm sitting on past the threshold.
+ */
+export const STALE_REASONS = [
+  'follow-up-deadline-passed',
+  'awaiting-reply-too-long',
+  'in-follow-up-state',
+  'unanswered-too-long',
+] as const;
+export const StaleReasonSchema = z.enum(STALE_REASONS);
+export type StaleReason = z.infer<typeof StaleReasonSchema>;

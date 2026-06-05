@@ -39,6 +39,8 @@ import {
   ToneFileSchema,
 } from './entities';
 import { DigestMetadataSchema } from './digest';
+import { TodayReadModelSchema } from './today';
+import { AppSettingsSchema } from './settings';
 import {
   EmailAddressSchema,
   HashSchema,
@@ -324,3 +326,25 @@ export type RevertLearningEntryRequest = z.infer<typeof RevertLearningEntryReque
 
 export const LearningEntryListResponseSchema = z.array(LearningEntrySchema);
 export type LearningEntryListResponse = z.infer<typeof LearningEntryListResponseSchema>;
+
+/* -------------------------------------------------------------------------- */
+/* Today + settings (LOCAL backend ↔ frontend; NOT server-bound — D29)         */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * `GET /api/today` response — the assembled Today read model (`today.ts`). This is a LOCAL hop
+ * (backend → frontend); it never reaches the metadata server, but it is still strict + body-free by
+ * construction (it carries only metadata + the sanctioned subject/snippet/sender).
+ */
+export const TodayResponseSchema = TodayReadModelSchema;
+export type TodayResponse = z.infer<typeof TodayResponseSchema>;
+
+/** `GET`/`PUT /api/settings` response — the full local {@link AppSettingsSchema}. */
+export const SettingsResponseSchema = AppSettingsSchema;
+export type SettingsResponse = z.infer<typeof SettingsResponseSchema>;
+
+// `PUT /api/settings` request: surfaced here alongside the response for symmetry. It is the SAME
+// binding declared in `settings.ts` (a re-export, not a new declaration), so the barrel re-exporting
+// both modules is not an ambiguous-name collision.
+export { UpdateSettingsRequestSchema } from './settings';
+export type { UpdateSettingsRequest } from './settings';

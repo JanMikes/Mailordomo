@@ -8,6 +8,8 @@
  *                   alias, task kind, importance, transition mode, actor).
  *  - `entities`   — the metadata-service entities from PROJECT.md §5 (the stored shapes).
  *  - `digest`     — morning-digest read models (subject/snippet/sender + attributed transitions).
+ *  - `today`      — the LOCAL Today command-center read model (metrics + counts + do-next cards).
+ *  - `settings`   — the LOCAL app settings (stale thresholds, lock timeout, color scheme).
  *  - `api`        — request/response contracts for the metadata service (ALL strict; the privacy
  *                   boundary lives here and in `privacy`).
  *  - `routing`    — fixed model routing + the checkable Golden-rule-#6 invariant.
@@ -23,4 +25,6 @@ export * from './routing';
 export * from './states';
 export * from './entities';
 export * from './digest';
+export * from './today';
+export * from './settings';
 export * from './api';
