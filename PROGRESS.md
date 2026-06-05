@@ -46,6 +46,14 @@
 > **🛑 CHECKPOINT — awaiting the user.** See the checkpoint runbook in the session summary / the
 > `verify-mailbox` script. Resume to Phase 4 only on the user's go-ahead after live verification.
 
+**CHECKPOINT CLEARED (same session):** the user delegated verification ("you verify") and supplied a
+real Seznam mailbox. `verify-mailbox` passed all five criteria live (read-only; SPECIAL-USE by flag —
+the `spam`/`\Junk` folder proved by-flag-not-name; uidValidity read; JWZ correct on real
+cross-provider data). Real finding: **Seznam has no CONDSTORE** — `computeSyncPlan` degrades
+gracefully (new-mail UID-range sync works; flag-delta sync is CONDSTORE-only; non-CONDSTORE flag
+rescan deferred as a future "deep poll"). Credentials used ephemerally, never persisted. Resuming to
+Phase 4. (→ D23, §10 checkpoint note)
+
 ---
 
 ## 2026-06-05 — Phase 1: shared types & contracts

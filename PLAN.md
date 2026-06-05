@@ -551,6 +551,13 @@ Lucide, **REST + WebSocket** client to the backend, React Query, light/dark, sen
   upsert**, so a flag toggle can't null the cached envelope (a real bug the separate test author
   caught). Send path (nodemailer) is **manual-only** and stubbable. `verify-mailbox` checkpoint
   script fetches by **sequence number** (robust to UID gaps) and is strictly read-only.
+- **D23** *(Phase 3 checkpoint, live)* The transport layer is **verified live read-only** against a
+  real Seznam mailbox (see §10 checkpoint note). **Not every provider supports CONDSTORE** (Seznam
+  doesn't): the sync degrades gracefully (UID-range new-message fetch works everywhere; incremental
+  flag-delta sync is CONDSTORE-only). Recorded limitation: non-CONDSTORE servers need a periodic
+  full-folder flag rescan to surface externally-made flag changes — a future "deep poll" enhancement,
+  not a v1 blocker. Credentials were used ephemerally for verification only and **never persisted**
+  (Golden rule #4); per-mailbox creds will live in Keychain/`{mailbox}.env` once Phase 8 lands.
 
 ---
 
@@ -564,7 +571,7 @@ reviewer before moving on.)*
 - [x] **Phase 1** — shared types & contracts ✅
 - [x] **Phase 2** — metadata service (+ Docker + GHCR) ✅
 - [x] **Phase 3** — transport + cache + state machine + folder mirroring ✅
-- [ ] **🛑 Phase 3 HUMAN CHECKPOINT** — live one-mailbox read-only verification (mandatory stop) ← **WE ARE HERE**
+- [x] **🛑 Phase 3 HUMAN CHECKPOINT** — live one-mailbox read-only verification ✅ (verified live against a real Seznam mailbox)
 - [ ] **Phase 4** — Claude job runner + triage + summaries
 - [ ] **Phase 4.5** — first integration milestone (backend↔server↔frontend; rebuild + lock visibility)
 - [ ] **Phase 5** — 3-way promises + ranking + stale + overdue-nudge
@@ -682,6 +689,25 @@ recent mail on a sparse mailbox).
 **Deferred:** `computeSyncPlan` post-invalidation reason-code precision + a never-cached-changed-UID
 test (behavior correct, coverage gap). **Phase 5 note:** the nudge auto-draft must use `saveDraft`
 (never `sendReply`); assert it behaviorally then.
+
+### Phase 3 HUMAN CHECKPOINT — verified live ✅
+
+Verified live (read-only) against a real **Seznam** mailbox (`jan@myspeedpuzzling.com`,
+`imap.seznam.cz:993`) via `verify-mailbox`. All five criteria passed:
+1. Connected **read-only** (`readOnly=true`); ended "no writes or sends were performed".
+2. **SPECIAL-USE resolved by flag, not name** — the `spam` folder flagged `\Junk` mapped to the
+   junk slot, the unflagged `newsletters` folder was left unmapped (the exact by-flag adversarial case).
+3. **uidValidity** read (1; uidNext 4197; exists 34).
+4. **JWZ threading** correct on messy real cross-provider data — a 3-deep `Re:` chain nested, and
+   replies whose parents live in Sent grouped under `(referenced, not fetched)` empty containers.
+5. The sequence-based `verify-mailbox` fix fetched the last N correctly.
+
+**Real-world finding — Seznam has no CONDSTORE** (`highestModseq` absent). Confirmed
+`computeSyncPlan` degrades gracefully: a flag-delta pass needs BOTH local+server modseq, so on a
+non-CONDSTORE server it falls back to UID-range new-message fetches (new mail still syncs). **Known
+limitation (recorded for later):** on non-CONDSTORE servers, flag changes made in another client
+surface only on a periodic full-folder rescan — a future enhancement (e.g. a "deep poll"), not a v1
+blocker. (→ D23) Resumed to Phase 4 on the user's delegation ("you verify").
 
 ---
 
