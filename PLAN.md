@@ -674,6 +674,56 @@ Lucide, **REST + WebSocket** client to the backend, React Query, light/dark, sen
   Inline card actions in 7a are **metadata-only** (mark-done transition, snooze/follow-up); **Draft/Send
   are deferred to 7b** and rendered as a visible disabled stub — **no send path exists in the 7a API**
   (golden rule #1).
+- **D30** *(Phase 7a CHECKPOINT 2 cleared, user steer 2026-06-05)* The user **eyeballed the Today command
+  center live against seed data and approved** — the do-next ranking reads correctly with my-promises
+  visually leading (**D26** tiers confirmed in the UI); no changes requested. CHECKPOINT 2 is **cleared**;
+  resuming autonomously through **7b→7c→8→9** with no further mandatory stops (only a golden-rule conflict
+  or high-stakes ambiguity is recorded + asked). **Two carried steers:** (1) **Do NOT wire live mail yet**
+  — seeded data (`seed:today`) is sufficient through the frontend phases; **live mailbox sync stays at
+  Phase 8 (creds/wizard) + Phase 9 (E2E)** — do not front-load credentials work. (2) **Carry forward the
+  recorded 7a deferrals:** project-NAME field on cards → **7c**; real drafting / refine / **Send** → **7b**
+  (sending is **always manual**; no autonomous send path); lock-timeout (`lockTimeoutMinutes` →
+  `ttl_seconds`) acquire/refresh consumption → **7b**.
+- **D31** *(Phase 7b blueprint — orchestrator, from the code-explorer map)* **Split work surface + refine
+  chat — data path & golden-rule boundaries.**
+  - **Draft body + refine transcript are LOCAL-ONLY** (golden rule #3), stored in a **dedicated local
+    `DraftStore`** (file-backed better-sqlite3 at `$MAILORDOMO_CONFIG_DIR/drafts.db`) — **NOT** the
+    disposable message cache (draft bodies aren't rebuildable from IMAP/metadata, must survive a cache
+    wipe), **NOT** the server. Keyed by `thread_id`; holds latest `body`/`version`/`model`/`author`/
+    `created_at` + the **refine transcript** (`RefineTurn[]` JSON). Mirrors the `SettingsStore` pattern;
+    injectable/fakeable. Only **`DraftMeta`** (version/model/author/at — no body) crosses to the server.
+  - **`claude/draft.ts`** (new, modeled on `claude/nudge.ts`): `taskKind:'draft'` (Opus floor enforced),
+    `--system-prompt-file prompts/draft.md` **layered with `--append-system-prompt-file <toneFile>`**
+    (first draft consumer of tone layering), folds the user's **instruction-textarea** text in. **Refine =
+    replay the full transcript** into a fresh `-p` call (golden rule #5 — NO `--continue`/`--resume`); the
+    backend owns the transcript in `DraftStore` and replays it, so the frontend posts only
+    `{threadId, instruction}`.
+  - **Manual Send endpoint lives in `api/app.ts`** (the ONLY layer permitted to import `smtp/**`;
+    `daemon/**` + `learning/**` are lint-barred). `POST /api/threads/:threadId/send` fires **only** on an
+    explicit user action; it calls `smtp/sendReply` with a **stub `MailTransport`** (D30: live creds are
+    Phase 8; matches the Phase 9 stubbed-SMTP E2E). On success → transition task to `waiting`, then fire
+    `draftVsSentDiff(draftBody, sentBody)` → if changed, enqueue the `learn` job (**the Phase 6 learning
+    trigger, finally wired**). **No autonomous send; the daemon has no path to this endpoint** (asserted
+    structurally + behaviorally).
+  - **Thread-detail read** (left pane): new `GET /api/threads/:threadId` returns a **body-free**
+    `ThreadDetail` (ordered message metadata + pinned **summary** + repo-freshness + current `lock`);
+    **rendered body text comes via a separate LOCAL-only hop**, parsed from the on-disk `.eml`, never in a
+    shared/server DTO.
+  - **Thread locks (D27 / #24):** acquire on open with `ttl_seconds = lockTimeoutMinutes*60` (from
+    `AppSettings`), **heartbeat refresh** at ~ttl/2 while open, **release on close**; contention
+    (`acquired:false`) shows the holder (`locked_by`) as a read-only presence indicator. Wraps the existing
+    client lock methods.
+  - **Learning revert UI (D28) ships with the LIFO guard enforced SERVER-SIDE in the backend endpoint**:
+    `POST /api/learning/:id/revert` refuses unless the target is the **last un-reverted entry for its
+    tone-file `path`** in `LearningLog.list()` (prevents silently dropping a newer lesson); the UI offers
+    revert only on the eligible entry.
+  - **Frontend view switch (no router):** lift `selectedThreadId` to `App`; render `<WorkSurface>` when set
+    else `<TodayPage>`; the do-next card "Open thread"/"Draft" set it; a back action returns to Today.
+    (react-router deferred — 7c decides when project/3-pane views arrive.) New shadcn: `textarea`,
+    `scroll-area`, `tabs`, `alert-dialog`.
+  - **Shared additions are owned by the backend implementer** (avoid races): body-free `ThreadDetailSchema`
+    + `ThreadMessageMetaSchema`; **draft body / `RefineTurn` stay LOCAL types** (not server-bound DTOs). No
+    new WS message type — reuse `today:changed` + React Query invalidation.
 
 ---
 
@@ -692,7 +742,7 @@ reviewer before moving on.)*
 - [x] **Phase 4.5** — first integration milestone (backend↔server↔frontend; rebuild + lock visibility) ✅
 - [x] **Phase 5** — 3-way promises + ranking + stale + overdue-nudge ✅
 - [x] **Phase 6** — tone memory + learning + sync ✅
-- [x] **Phase 7a** — Today + do-next cards ✅ — 🛑 **CHECKPOINT 2: paused for user eyeball** (see below)
+- [x] **Phase 7a** — Today + do-next cards ✅ — 🛑 **CHECKPOINT 2 CLEARED** ✅ (user eyeballed live vs seed; approved — ranking reads correctly, my-promises leading; → D30)
 - [ ] **Phase 7b** — split work surface + refine chat
 - [ ] **Phase 7c** — 3-pane fallback + project views
 - [ ] **Phase 8** — setup wizard + repo pointers + credentials
@@ -992,6 +1042,9 @@ surface; the learning revert UI's LIFO/structured guard (D28) is still 7b/7c.
 - **CHECKPOINT 2 — at the END of Phase 7a (2026-06-05 steer):** after the **Today command center +
   do-next cards** land and `verify` is green, **STOP** so the user can eyeball the core UI against
   real mail before 7b/7c build on it. Resume to Phase 7b only on the user's go-ahead.
+  **✅ CLEARED 2026-06-05** — the user reviewed the Today command center live against seed data and
+  **approved** (ranking reads correctly, my-promises visually leading); no changes. Resumed to Phase 7b
+  under the autonomous working agreement, no further mandatory stops. (→ D30)
 - Otherwise: build Phases 0→9 autonomously, keeping `main` buildable at every boundary, updating
   §10 + `PROGRESS.md` as each DoD is met. The only other stops are this Phase-7a checkpoint, a
   **golden-rule conflict**, or a **high-stakes ambiguity** (record it here and ask).
