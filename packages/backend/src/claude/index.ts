@@ -19,6 +19,8 @@
  *  - `prompts`       — runtime resolution of the editable system-prompt markdown.
  *  - `triage` (+ `triage-schema`) — Haiku triage → state-machine event.
  *  - `summarize`     — Sonnet thread summary.
+ *  - `extract-promises` (+ `promise-extraction-schema`) — Haiku promise candidates → reconciler.
+ *  - `nudge`         — the OPUS overdue-nudge auto-draft (saveDraft-only; never sends).
  */
 export * from './types';
 export * from './build-args';
@@ -32,3 +34,6 @@ export * from './prompts';
 export * from './triage-schema';
 export * from './triage';
 export * from './summarize';
+export * from './promise-extraction-schema';
+export * from './extract-promises';
+export * from './nudge';

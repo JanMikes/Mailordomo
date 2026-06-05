@@ -8,10 +8,10 @@ Files (added with their consumers in Phases 4–9):
 
 - `triage.md` — triage / state classification (Haiku, `--json-schema`) — **added (Phase 4)**
 - `summarize.md` — thread summarization (Sonnet) — **added (Phase 4)**
-- `extract-promises.md` — 3-way promise extraction (Haiku→Sonnet, `--json-schema`) — Phase 5
-- `draft.md` — reply drafting (Opus) — Phase 5/7
+- `extract-promises.md` — 3-way promise extraction (Haiku, `--json-schema`) — **added (Phase 5)**
+- `nudge.md` — the one sanctioned overdue-nudge auto-draft (Opus, `saveDraft`-only) — **added (Phase 5)**
+- `draft.md` — reply drafting (Opus) — **added (Phase 5)**
 - `digest.md` — morning digest synthesis (Sonnet) — Phase 9
-- `nudge.md` — the one sanctioned overdue-nudge auto-draft (Opus) — Phase 5
 
 The backend resolves this directory at runtime (`packages/backend/src/claude/prompts.ts`): it walks
 up from the module to find `prompts/`, or honors `CLAUDE_PROMPTS_DIR` if set. Editing a file here
