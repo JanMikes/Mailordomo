@@ -15,6 +15,11 @@ coverage/
 *.db
 *.db-wal
 *.db-shm
+# The local message cache + draft store default to a `.sqlite` name (CACHE_DB_PATH, drafts.db) — ignore
+# those + their WAL/shm sidecars so a backend boot / verify run never leaves untracked artifacts.
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
 
 # Secrets — NEVER commit (Golden rule #4). Per-mailbox {mailboxName}.env stays local.
 .env
