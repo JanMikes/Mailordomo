@@ -879,6 +879,36 @@ Lucide, **REST + WebSocket** client to the backend, React Query, light/dark, sen
   - **`npm run verify` GREEN** (1957 tests: backend 823, frontend 79, server 211, shared 844). +31 tests across the
     seam (5 implementer smoke + 25 intent-derived + 1 dedup regression). No new npm deps.
 
+- **D37** *(post-Phase-9 — first real-mailbox UX gaps, surfaced while connecting a live Seznam account)* **Manual
+  "Sync now" + mailbox management (list / edit / remove), so the app is operable without backend restarts or
+  hand-editing `config.json`.** Same four-role split (implementer → separate test-author → independent reviewer → fixes).
+  - **`POST /api/sync`** (`api/app.ts`) — triggers the running daemon's `runCycleNow` via a mutable `syncControl` box
+    that the composition root (`api/server.ts`) fills once the daemon is live; **503** when off/idle, **202** when bound
+    (read LIVE per request, so a daemon that starts later flips 503→202). The daemon's `onCycle` now also
+    `broadcast({type:'today:changed'})` (try/caught — it runs in the loop's `.then`, outside its `.catch`), so Today
+    auto-refreshes on cold-poll, IDLE new-mail, AND manual sync. Frontend: `useSyncNow` + a "Sync now" button on the
+    Today header (calm "daemon is off" copy on 503).
+  - **`DELETE /api/wizard/mailboxes/:id`** (`api/wizard.ts` + pure `removeMailbox` in `config/mutations.ts`) — drops the
+    NON-secret config entry AND both Keychain credential slots (**best-effort**, so a `security` CLI hiccup can't turn a
+    successful removal into a 500). 404 on unknown id; no secret echoed. Frontend: a **"Connected mailboxes"** card in
+    Setup (lists address/endpoints/credential-PRESENCE; Test; inline Edit reusing the existing `PATCH` — rotate password
+    or change endpoints, blank password = keep current; Remove behind a confirm step). The `GET`+`PATCH` routes already
+    existed; this surfaces them in the UI and adds the missing DELETE.
+  - **Golden rules (reviewer-confirmed):** #1 — a sync only calls `runCycleNow` (poll→triage→draft); the daemon import
+    graph still reaches no SMTP; a tripwire `sendDeps` (compose+transport spies) is never touched by `/api/sync`
+    (tested). #4 — DELETE clears both secret slots and echoes none; edit passwords are write-only (omitted = preserved,
+    supplied = rotate only that slot) — tested end-to-end through the PATCH route.
+  - **Reviewer (independent, fresh context): no must-fix.** Three should-fix applied: (1) best-effort credential delete
+    on DELETE; (2) guarded `broadcast` in `onCycle`; (3) a client-side non-empty guard on the edit form. Plus the
+    reviewer's test gap (N3): added PATCH password-preservation tests.
+  - **Known limitation (reviewer-assessed, DEFERRED — pre-existing D35/D36 daemon behavior, NOT introduced here):** a
+    first-cycle message that hits the 90s `claude` timeout (or is throttle-deferred — the live Seznam backlog neared the
+    2.5 window cap) sits behind the advanced sync cursor and isn't retried without a cache reset; a processed-watermark /
+    failed-retry separate from the sync cursor is the proper follow-up. Removing the daemon's watched mailbox takes
+    effect on the next backend restart (single-mailbox v1 binds at startup) — documented in the route + RUNBOOK.
+  - **`npm run verify` GREEN (1984 tests: backend 843, frontend 86, server 211, shared 844)** — +27 across the two
+    features (test-author 17 backend + 7 frontend; +3 PATCH-preservation). No new npm deps.
+
 ---
 
 ## 10. Progress log
@@ -902,6 +932,7 @@ reviewer before moving on.)*
 - [x] **Phase 8** — setup wizard + repo pointers + credentials ✅
 - [x] **Phase 9** — digest + E2E + polish + launchd + docs ✅
 - [x] **D35 closure** — the daemon's live message source (IMAP poll → cache → enumerate) wired; real mail flows poll→triage→state→promises→summary ✅ (→ D36; `RUNBOOK.md`)
+- [x] **D37** — manual "Sync now" + mailbox management (list/edit/remove) surfaced while connecting the first real mailbox; live Seznam account connected + triaging (25 backlog tasks) ✅
 
 > Per-session notes live in `PROGRESS.md` (§4.7); per-phase reviewer notes are appended here.
 

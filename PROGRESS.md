@@ -7,6 +7,50 @@
 
 ---
 
+## 2026-06-06 (session 2) — Connected the first real mailbox; added manual sync + mailbox management (D37)
+
+**What I did**
+- **Started the app locally end-to-end** so the user could connect their real mailbox: generated an INFRA metadata
+  token into a gitignored `.env`, ran the metadata service (persistent DB under `~/.mailordomo/metadata-data`), the
+  backend, and the Vite frontend (UI on **:4318**, not 5173 — the project pins it). Stopped a stale `/tmp` verify
+  harness that was holding the ports. Credentials stayed the user's to enter (golden rule #4 — I never typed them).
+- **User connected a real Seznam mailbox** via the wizard (app-password → Keychain); turned the daemon on. It did a
+  live **IMAP poll → cache → triage** of the recent backlog — **25 tasks** created, Today renders real ranked threads.
+  Verified bodies live only in the local cache; only metadata crossed to the service.
+- **Diagnosed two non-bugs while the user set up:** the repo path failed because the dir is `speedpuzzling.cz` (not
+  `speedpuzzling`) and `~` isn't expanded (Node `fs`); "Pull now" → `repo is in local-path mode` is by design (a live
+  local clone is read directly via `--add-dir`; the user pulls it themselves).
+- **D37 — closed two first-use UX gaps** the user hit (same four-role split):
+  - **Manual "Sync now"** — `POST /api/sync` → daemon `runCycleNow` via a mutable `syncControl` box (503 off / 202
+    bound); the daemon now broadcasts `today:changed` per cycle so Today auto-refreshes (cold-poll + IDLE + manual).
+    Frontend `useSyncNow` + a Today-header button.
+  - **Mailbox management** — `DELETE /api/wizard/mailboxes/:id` (+ pure `removeMailbox`) drops config + both Keychain
+    slots (best-effort); a "Connected mailboxes" card in Setup lists/tests/edits/removes accounts (edit reuses the
+    existing PATCH; passwords write-only, blank = keep current; Remove behind a confirm).
+- **Test-author** (separate context): +24 tests (17 backend, 7 frontend). **Reviewer** (independent): **no must-fix**;
+  applied 3 should-fix — best-effort credential delete, guarded `onCycle` broadcast, edit blank-field guard — and added
+  3 PATCH password-preservation tests (reviewer N3).
+- **`npm run verify` GREEN (1984 tests:** backend 843, frontend 86, server 211, shared 844). Rebuilt + redeployed the
+  backend; smoke-tested `/api/sync`→202, `DELETE` unknown→404, mailbox + Today (25 tasks) intact across the restart.
+
+**What's half-done / known limitations (recorded in PLAN D37)**
+- A few first-cycle messages hit the 90s `claude` timeout and the run neared the 2.5 throttle; behind the advanced sync
+  cursor they aren't retried without a cache reset — a processed-watermark / failed-retry is the proper follow-up.
+- Real SMTP send still a stub (unchanged; golden rule #1). Removing the watched mailbox needs a backend restart
+  (single-mailbox v1 binds at startup).
+
+**Next (on the user's go-ahead)**
+- Processed-watermark / failed-retry so timed-out/throttled messages get re-triaged; (eventually) real SMTP send;
+  deploy the metadata service only when it needs to be shared across devices/people.
+
+**Surprises/decisions**
+- The "exit 0" from a backgrounded `npm run verify | tail` was `tail`'s status, not npm's — `prettier --check` had
+  failed on 2 unformatted test files; re-ran without the pipe mask. (Don't gate on a piped exit code.)
+- Metadata lives in the separate metadata-service process, so restarting the backend never loses triaged state —
+  redeploying to pick up new endpoints is safe mid-use.
+
+---
+
 ## 2026-06-06 — D35 closure: the daemon's live message source (real mail flows end-to-end)
 
 **What I did**
