@@ -17,6 +17,13 @@
  *                   lock timeout, color scheme) read by the backend and exposed via `/api/settings`.
  *  - `drafts/`    — the LOCAL-only draft store (Phase 7b): draft bodies + refine transcripts in a
  *                   dedicated `drafts.db`, never synced to the server (golden rules #2 + #3).
+ *  - `credentials/` — the CredentialStore (Phase 8): the SINGLE home for secrets (Golden rule #4) —
+ *                   Keychain (`security` CLI) / `{mailbox}.env` fallback / in-memory fake. Secrets
+ *                   never reach the config JSON, an API response, a log, or the metadata service.
+ *  - `config/`    — the LOCAL non-secret config store (Phase 8): projects → mailboxes → repos in a
+ *                   JSON file, plus pure config mutations. No passwords/tokens (those are in creds).
+ *  - `repos/`     — repo pointers in two modes (Phase 8): local path (`--add-dir`) + git-URL read-only
+ *                   mirror (injectable `GitRunner` seam + PURE pull scheduler). No background loop yet.
  *  - `api/`       — the thin localhost backend API factory (`createBackendApi`) + wiring checks +
  *                   the Today read-model assembler + the WS server (Phase 4.5 / 7a). The runnable
  *                   `api/server.ts` entry is NOT re-exported (it has a listen side-effect); import it
@@ -38,4 +45,7 @@ export * from './learning';
 export * from './metadata-client';
 export * from './settings';
 export * from './drafts';
+export * from './credentials';
+export * from './config';
+export * from './repos';
 export * from './api';

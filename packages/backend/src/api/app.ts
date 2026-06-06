@@ -47,6 +47,9 @@ import {
 import type { MessageCache, MessageRow } from '../cache';
 import type { ClaudeRunner, DraftContext } from '../claude';
 import { generateDraft, refineDraft, summarizeThread } from '../claude';
+import type { ConfigStore } from '../config';
+import type { CredentialStore } from '../credentials';
+import type { GitRunner } from '../repos';
 import type { DraftStore } from '../drafts';
 import type { LearningDeps, LearningLog } from '../learning';
 import { applyLearning, draftVsSentDiff, revertLearning } from '../learning';
@@ -66,6 +69,8 @@ import {
 } from './thread-detail-view';
 import type { WiringReport, WiringStatus } from './wiring';
 import { checkCache, checkClaude, checkMetadata } from './wiring';
+import type { ImapConnectionTester } from './test-connection';
+import { registerWizardRoutes } from './wizard';
 import { listCachedThreads } from './threads-view';
 import type { ThreadListItem } from './threads-view';
 import { assembleTodayView } from './today-view';
@@ -117,6 +122,18 @@ export interface BackendApiDeps {
   readonly learningLog?: LearningLog;
   /** The send-path deps (real composer + STUB transport — D30). Required by `POST …/send`. */
   readonly sendDeps?: SendDeps;
+
+  /* ---- Phase 8 (setup wizard) — OPTIONAL; the wizard routes mount only when both stores are set ---- */
+  /** LOCAL non-secret config store (projects → mailboxes → repos). Backs the wizard config CRUD. */
+  readonly configStore?: ConfigStore;
+  /** The credential store (Keychain / `.env`). The ONLY home for secrets (Golden rule #4). */
+  readonly credentialStore?: CredentialStore;
+  /** Read-only IMAP login seam for `test-connection` (mocked in tests; real impl wired by server.ts). */
+  readonly imapTester?: ImapConnectionTester;
+  /** Git seam for repo-mirror operations (mocked in tests; real impl wired by server.ts). */
+  readonly gitRunner?: GitRunner;
+  /** Override the wizard's Claude health probe (default `checkClaudeVersion` → `claude --version`). */
+  readonly checkClaudeVersion?: () => Promise<WiringStatus>;
 }
 
 /** The JSON body of `GET /api/threads`. */
@@ -691,6 +708,23 @@ export function createBackendApi(deps: BackendApiDeps): Hono {
       { type: 'draft-vs-sent', diff },
       { now: new Date().toISOString() },
     );
+  }
+
+  /* ============================== Phase 8 — wizard ============================== */
+  // Mount the setup-wizard routes (config CRUD, credential write-only, read-only test-connection,
+  // Claude health) ADDITIVELY, only when the config + credential stores are wired (existing 4.5/7x
+  // tests construct the app without them and are unaffected). Secrets flow ONLY into the
+  // CredentialStore here; no response echoes one (Golden rule #4).
+  if (deps.configStore !== undefined && deps.credentialStore !== undefined) {
+    registerWizardRoutes(app, {
+      configStore: deps.configStore,
+      credentialStore: deps.credentialStore,
+      ...(deps.imapTester !== undefined ? { imapTester: deps.imapTester } : {}),
+      ...(deps.gitRunner !== undefined ? { gitRunner: deps.gitRunner } : {}),
+      ...(deps.checkClaudeVersion !== undefined
+        ? { checkClaudeVersion: deps.checkClaudeVersion }
+        : {}),
+    });
   }
 
   return app;

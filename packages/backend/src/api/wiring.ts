@@ -101,3 +101,52 @@ export async function checkClaude(
     });
   });
 }
+
+/**
+ * A slightly deeper Claude probe for the setup wizard (PLAN.md §7 Phase 8, D33): run `<bin>
+ * --version`. This both RESOLVES the binary (spawn fails with ENOENT if it's missing) AND confirms it
+ * actually executes, surfacing the version for the wizard's health step. It is still a CHEAP probe —
+ * `--version` makes NO model call and consumes none of the subscription window. Never throws; a
+ * missing/broken binary is `ok:false`. (The lighter `checkClaude` resolve-only check still backs the
+ * three-layer `/api/wiring` report.)
+ */
+export function checkClaudeVersion(
+  timeoutMs = 4000,
+  env: NodeJS.ProcessEnv = process.env,
+): Promise<WiringStatus> {
+  const configured = env['CLAUDE_BIN']?.trim();
+  const bin = configured ? configured : 'claude';
+  const label = configured ? `CLAUDE_BIN "${bin}"` : `"${bin}" on PATH`;
+  return new Promise<WiringStatus>((resolve) => {
+    let settled = false;
+    const done = (status: WiringStatus): void => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve(status);
+    };
+    const child = spawn(bin, ['--version'], { stdio: ['ignore', 'pipe', 'ignore'] });
+    let out = '';
+    const timer = setTimeout(() => {
+      child.kill('SIGKILL');
+      done({ ok: false, detail: `claude --version timed out after ${timeoutMs}ms` });
+    }, timeoutMs);
+    child.stdout?.on('data', (chunk: Buffer) => {
+      out += chunk.toString();
+    });
+    child.on('error', (cause) => {
+      done({ ok: false, detail: `claude not runnable (${label}): ${errMessage(cause)}` });
+    });
+    child.on('close', (code) => {
+      const version = out.trim();
+      if (code === 0 && version !== '') {
+        done({ ok: true, detail: `claude ${version} (${label})` });
+      } else {
+        done({
+          ok: false,
+          detail: `claude --version failed (${label}); set CLAUDE_BIN to a valid path`,
+        });
+      }
+    });
+  });
+}

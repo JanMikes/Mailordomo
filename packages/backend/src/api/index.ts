@@ -14,3 +14,5 @@ export * from './project-name';
 export * from './thread-detail-view';
 export * from './draft-tone';
 export * from './ws';
+export * from './wizard';
+export * from './test-connection';

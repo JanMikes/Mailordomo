@@ -15,15 +15,19 @@ import { serve } from '@hono/node-server';
 import type { WsMessage } from '@mailordomo/shared';
 import { MessageCache } from '../cache';
 import { RealClaudeRunner } from '../claude';
+import { createFileConfigStore, resolveConfigFilePath } from '../config';
+import { resolveCredentialStore } from '../credentials';
 import { createFileDraftStore, resolveDraftsDbPath } from '../drafts';
 import { LearningLog, resolveLearningDir } from '../learning';
 import { MetadataClient } from '../metadata-client';
+import { createGitRunner } from '../repos';
 import { createFileSettingsStore, resolveSettingsFilePath } from '../settings';
 import { createNodemailerComposer } from '../smtp/nodemailer';
 import type { SendDeps } from '../smtp/send';
 import { createStubMailTransport } from '../smtp/stub-transport';
 import { ToneStore, resolveToneDir } from '../tone';
 import { createBackendApi } from './app';
+import { createImapConnectionTester } from './test-connection';
 import { createTodayWsServer, WS_PATH } from './ws';
 import type { TodayWsServer } from './ws';
 
@@ -83,6 +87,14 @@ function main(): void {
     transport: createStubMailTransport(),
   };
 
+  // Phase 8 setup-wizard deps: the LOCAL non-secret config store, the CredentialStore (Keychain-first;
+  // the ONLY home for secrets — Golden rule #4), the read-only IMAP connection tester, and the git
+  // seam for read-only repo mirrors. No background sync/pull loop is started here (that is Phase 9).
+  const configStore = createFileConfigStore(resolveConfigFilePath(process.env));
+  const credentialStore = resolveCredentialStore(process.env);
+  const imapTester = createImapConnectionTester();
+  const gitRunner = createGitRunner();
+
   // The WS server can only be built AFTER `serve()` hands back the HTTP server, but the API needs a
   // `broadcast` now — so route through a stable closure that delegates to the (later) WS server, held
   // in a const box (the box is const; its slot is filled once the socket exists).
@@ -102,6 +114,10 @@ function main(): void {
     toneStore,
     learningLog,
     sendDeps,
+    configStore,
+    credentialStore,
+    imapTester,
+    gitRunner,
   });
   const server = serve({ fetch: app.fetch, port: env.port, hostname: env.host }, (info) => {
     console.log(
