@@ -11,7 +11,7 @@
 import { useState } from 'react';
 import type { ReactElement } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { render, screen, within } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import {
@@ -79,15 +79,20 @@ describe('MailboxStep — provider presets pre-fill the transport endpoints', ()
     mockFetch([presetRoute()]);
     renderWith(<Harness />);
 
-    // The default preset seeds both endpoints without any user interaction.
-    const hosts = (await screen.findAllByLabelText('Host')) as HTMLInputElement[];
-    const ports = screen.getAllByLabelText('Port') as HTMLInputElement[];
-    expect(hosts[0]).toHaveValue('imap.mail.me.com');
-    expect(ports[0]).toHaveValue(993);
-    expect(hosts[1]).toHaveValue('smtp.mail.me.com');
-    expect(ports[1]).toHaveValue(587);
-    // The iCloud guidance (app-specific password) is surfaced.
-    expect(screen.getByText(/app-specific password/i)).toBeInTheDocument();
+    // The default preset seeds both endpoints without any user interaction. The presets are fetched
+    // async (GET /wizard/presets), so wait for the auto-fill to LAND rather than reading the inputs
+    // the instant they mount (still empty) — that read-too-early was the flaky race.
+    await screen.findAllByLabelText('Host');
+    await waitFor(() => {
+      const hosts = screen.getAllByLabelText('Host') as HTMLInputElement[];
+      const ports = screen.getAllByLabelText('Port') as HTMLInputElement[];
+      expect(hosts[0]).toHaveValue('imap.mail.me.com');
+      expect(ports[0]).toHaveValue(993);
+      expect(hosts[1]).toHaveValue('smtp.mail.me.com');
+      expect(ports[1]).toHaveValue(587);
+      // The iCloud guidance (app-specific password) is surfaced.
+      expect(screen.getByText(/app-specific password/i)).toBeInTheDocument();
+    });
   });
 
   it('switching to Custom clears the host so the user must enter it', async () => {
