@@ -10,7 +10,9 @@
  */
 import { randomUUID } from 'node:crypto';
 import { createTransport } from 'nodemailer';
-import NodemailerMailComposer from 'nodemailer/lib/mail-composer';
+// Explicit `/index.js` (not the bare directory) so the runnable ESM server bundle resolves this deep
+// import under Node's ESM loader, which rejects CJS-style directory imports (ERR_UNSUPPORTED_DIR_IMPORT).
+import NodemailerMailComposer from 'nodemailer/lib/mail-composer/index.js';
 import type { ImapAppendClient } from '../imap/types';
 import type {
   ComposedMime,

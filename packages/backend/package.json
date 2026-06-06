@@ -6,7 +6,8 @@
   "scripts": {
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "build": "tsup src/index.ts --format esm --clean --silent",
+    "build": "tsup",
+    "start": "node dist/api/server.js",
     "verify-mailbox": "node scripts/verify-mailbox.ts"
   },
   "devDependencies": {

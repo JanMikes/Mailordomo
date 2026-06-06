@@ -19,6 +19,7 @@
     "verify": "npm run typecheck && npm run lint && npm run test && npm run build",
     "refresh-fixtures": "node scripts/refresh-fixtures.mjs",
     "seed:today": "tsx packages/backend/scripts/seed-today.ts",
+    "start": "npm start --workspace=@mailordomo/backend",
     "prepare": "husky"
   },
   "devDependencies": {
