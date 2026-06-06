@@ -797,7 +797,7 @@ reviewer before moving on.)*
 - [x] **Phase 7a** — Today + do-next cards ✅ — 🛑 **CHECKPOINT 2 CLEARED** ✅ (user eyeballed live vs seed; approved — ranking reads correctly, my-promises leading; → D30)
 - [x] **Phase 7b** — split work surface + refine chat ✅
 - [x] **Phase 7c** — 3-pane fallback + project views ✅
-- [ ] **Phase 8** — setup wizard + repo pointers + credentials
+- [x] **Phase 8** — setup wizard + repo pointers + credentials ✅
 - [ ] **Phase 9** — digest + E2E + polish + launchd + docs
 
 > Per-session notes live in `PROGRESS.md` (§4.7); per-phase reviewer notes are appended here.
@@ -1126,6 +1126,28 @@ is now unreachable (all four nav items live) — a harmless reusable affordance,
 **Deferrals correctly scoped:** multi-project SETUP/wizard → Phase 8; per-project config beyond the single
 configured project → Phase 8+; 3-pane inline mutation → escalates to 7b; repo-freshness wiring → Phase 8; LIFO
 revert UI guard → carried from D28.
+
+### Phase 8 review (independent reviewer, fresh context) — setup wizard + credentials + repo pointers
+
+**Verdict:** PASS. **`npm run verify` green; 1846 tests** (+33 intent-derived by a separate test-author, 4
+mutation-checked). Built via the orchestrator-as-architect (D33) → backend impl → frontend impl → separate
+test-author → reviewer split. **Golden rule #4 confirmed — secrets reach ONLY the `CredentialStore`**, absent
+from: `config.json` (strict `MailordomoConfigSchema.parse()` rejects a smuggled key before any disk write; the
+handler strips `imapPassword`/`smtpPassword` out and persists `rest` only); **all API responses** (presence
+booleans only; a non-vacuous deep-scan intent test over POST/PATCH/PUT/GET/config finds no sentinel); **logs**
+(no `console.*` in credentials/wizard/repos; error strings name only `(account, kind)` + exit code, never the
+argv/secret; a `console.error` spy confirms no sentinel even on a store failure); **git** (`.gitignore` keeps
+`*.env` out, `.env.example` placeholders only, no `.env` committed; `.env` fallback `0o600`); the **frontend**
+(transient `useState`, `type=password`/`autoComplete=off`, cleared + `mutation.reset()` on success, no
+localStorage/URL/query-key). **test-connection is structurally read-only** (the imapflow mock proves only
+`connect`/`mailboxOpen({readOnly:true})`/`logout`; `logger:false`; the password never enters `reason`).
+**No must-fix findings.** Two sub-80 concerns (→ Phase 9 polish): (1) a malformed `:account` on
+`GET/DELETE /credentials/:account/:kind` returns 500 not 400 (the guard fires, no leak — just a wrong status);
+(2) `.`/`..` pass the account regex but resolve to safe literal `...env` filenames + harmless Keychain labels
+(reviewer + test-author both confirmed non-traversal). **Deferrals correctly scoped:** OAuth2; private-repo
+PAT/SSH (#27, the `repo-pat` slot exists, unwired); metadata-service repo-identity push (no server repo endpoint
+yet); Keychain `security` not injectable (pure `buildSecurityArgs` tested instead; CI never spawns `security`);
+**no daemon sync loop started** (Phase 9 wires the configured creds into live sync + the E2E).
 
 ---
 

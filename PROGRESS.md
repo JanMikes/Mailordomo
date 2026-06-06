@@ -7,6 +7,53 @@
 
 ---
 
+## 2026-06-06 — Phase 8: setup wizard + repo pointers + credentials
+
+**What I did**
+- Ran **Phase 8** via the four-role split (orchestrator-as-architect **D33** → backend impl → frontend impl →
+  **separate test-author** → independent **reviewer**). **This phase handles real credentials — golden rule #4
+  governed every decision.**
+  - **Backend:** a `CredentialStore` (macOS **Keychain** via the `security` CLI + per-mailbox **`{mailbox}.env`**
+    fallback `0o600` + a **fake** for tests — secrets live ONLY here); a **non-secret** `ConfigStore`
+    (projects/mailboxes/repos); provider **presets** (iCloud/Gmail/custom); **repo pointers two modes** (local
+    path + git-URL **mirror** with a **pure** pull-scheduler + an injected `GitRunner` seam); the **Claude
+    health-check**; the **wizard API** (`/api/wizard/*` — config CRUD, **write-only** credential storage, a
+    **read-only** `test-connection`).
+  - **Frontend:** the **guided wizard** (stepper: project → mailbox + preset auto-fill → repo → Claude health →
+    done) + an **Advanced** raw-config view (never trap a dev). Passwords are **transient-only** (`type=password`,
+    cleared + `mutation.reset()` on save), display is **presence-only**.
+- **Golden rule #4 independently audited at every layer** (mine + the reviewer's): secrets reach ONLY the
+  CredentialStore — never in `config.json` (strict schema strips them pre-write), never echoed by any response
+  (presence booleans only), never logged, never in git (`*.env` gitignored, `.env.example` placeholders), never in
+  localStorage. The add-mailbox handler destructures the password OUT and persists `rest` only.
+- Separate test-author added **33 intent-derived tests** (4 mutation-checked, incl. the **#4 echo-secret deep-scan**
+  and a **test-connection read-only** proof); **no bugs / no secret-leak path**. Reviewer: **PASS**.
+- **`npm run verify` green: 1846 tests.** No new npm deps. Pushed in 6 commits.
+
+**What's half-done**
+- Nothing in 8 — DoD met. **No daemon sync loop started** (Phase 9 wires the configured creds into live sync + the
+  E2E). Two sub-80 polish deferrals (→ Phase 9): a 500→400 status on a malformed `:account` param; tightening the
+  account regex against `.`/`..` (currently safe — they resolve to literal `...env` filenames, confirmed).
+
+**Next**
+- **Phase 9 — digest + E2E + polish + launchd + docs** (the FINAL phase): the **morning digest** (Sonnet synthesis;
+  Simona's part from **server metadata only**, my-mailbox content synthesized locally); the **thin E2E**
+  (poll→triage→draft→**send-stub**); the **launchd** plist + install script; final READMEs + `.env.example`
+  completeness; polish. This is where the **daemon loop** finally wires the Phase 8 creds into live sync.
+
+**Surprises/decisions**
+- **Golden rule #4 is enforced by CONSTRUCTION** — the same strict-schema discipline as the body-privacy boundary:
+  a secret only ever appears as an **inbound-only** request field routed straight to the CredentialStore; stored
+  config + responses are secret-free `strictObject`s, so a smuggled password fails `parse()` before disk/wire.
+- **Hit + fixed a pre-commit tooling gap:** the root `vitest related` ran cross-package WITHOUT the frontend's `@/`
+  alias, so a shared-only commit failed on traced frontend tests. **Per-package `.lintstagedrc.json`** (mirroring
+  the existing frontend one) scopes `vitest related` to each package; **pre-push `npm run verify` stays the full
+  cross-package gate.** (Also cleanly re-split one commit a failed attempt had left staged.)
+- **The subtlest #4 surface was React Query's retained `variables`:** clearing the password `useState` isn't enough
+  — the mutation must be `reset()` to drop its in-memory copy. Caught by the implementer, asserted by the test-author.
+
+---
+
 ## 2026-06-06 — Phase 7c: classic 3-pane fallback + project views (Phase 7 complete)
 
 **What I did**
