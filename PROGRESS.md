@@ -7,6 +7,61 @@
 
 ---
 
+## 2026-06-06 — D35 closure: the daemon's live message source (real mail flows end-to-end)
+
+**What I did**
+- **Closed D35** — the build's last recorded gap. The daemon's message source was a placeholder yielding `[]`; it now
+  does a real **IMAP poll → cache → enumerate**. Ran the standard four-role split (implementer → separate test-author
+  → independent reviewer → fixes → docs).
+  - **`source/cache-source.ts`** (new) — `createCacheDaemonSource(deps): DaemonSource`, a COMPOSITION module OUTSIDE
+    `daemon/**` (injected, so the daemon stays decoupled + structurally send-proof — it only ever sees the
+    `DaemonSource` interface). Per poll: snapshot the cache cursor → run the Phase 3 `MailboxSync` over the resilient
+    connection's current client (read-only on IMAP) → JWZ-thread the folder and write the previously-never-populated
+    `thread_root_id` back to the cache (a LOCAL index) → enumerate NEW rows (cold-start bounded to the recent
+    `initialBacklog`=25; thereafter `uid > last_seen_uid`) → upsert each thread (sanctioned fields only) → read the
+    body LOCALLY from `.eml` → emit `DaemonMessage`s. Resilient (disconnected → `[]`; never throws).
+  - **`api/server.ts`** — builds the live source + ONE `ResilientImapConnection` (own reconnect; IDLE-hot → immediate
+    cycle; cold poll as the net) from the wizard's config + the Keychain IMAP password; **idle-with-reason** when not
+    fully configured. Defaulted the cache DB + `.eml` blob dir under `$MAILORDOMO_CONFIG_DIR` (the blob dir is REQUIRED
+    for body reads — a real prior gap), and accepted the documented `METADATA_SERVICE_URL`/`METADATA_PROJECT_TOKEN`
+    env names (a doc-vs-code mismatch I found + fixed).
+- **Test-author** (separate context): 25 intent-derived tests (4 mutation-checked) — poll→cache→enumerate,
+  idempotency, golden-rule-#3 wire scan, threading/root grouping, cold-start bound, task-context, resilience, +the
+  whole daemon loop over the real source (0 sends). **No implementation bugs**; one docstring-accuracy finding (softened).
+- **Reviewer** (separate context): **PASS-WITH-CONCERNS**, all three golden rules confirmed. **Fixed M1** (must-fix):
+  the cycle now **dedups `createPromise`** against the thread's existing promises, so re-processing a message (cache
+  rebuild re-emits the backlog; IDLE/poll overlap re-enumerates) never duplicates promises — regression-tested.
+  Fixed **C1** (pick most-recent task, not oldest-done) and **C2** (empty-string root guard).
+- Wrote **`RUNBOOK.md`**: connect a Seznam mailbox via the wizard → first sync → Today renders real threads, plus how
+  to verify (Today view / metadata service / logs) and confirm no bodies/secrets left the machine.
+- **`npm run verify` green: 1957 tests** (backend 823, frontend 79, server 211, shared 844). No new npm deps. Pushed
+  across 4 commits (feat / test / fix / docs).
+
+**What's half-done**
+- Nothing in this seam — the daemon now flows real mail poll→triage→state→promises→summary, drafting only the
+  sanctioned overdue-nudge. **Stopped here as instructed** so the user connects the mailbox + confirms before anything
+  else (credentials are the user's to enter — golden rule #4).
+
+**Next (the user's real-world steps, then on the user's go-ahead)**
+- Follow `RUNBOOK.md` to connect the Seznam mailbox and confirm Today renders real triaged threads.
+- Then, candidates (recorded, NOT started): **real SMTP send** (swap the stub transport — currently the manual Send
+  button does not transmit; the daemon stays send-proof regardless); a bounded initial fetch range (cold start
+  downloads the whole INBOX); a processed-watermark separate from the sync cursor (so a build-failure doesn't drop a
+  message); graceful shutdown (IMAP logout); the throttle's weekly cap.
+
+**Surprises/decisions**
+- **The snippet is the sanctioned body exception, not a leak** — my own smoke test initially asserted "no body text
+  crosses," which is wrong: a bounded ≤200-char snippet MAY cross (PROJECT.md §5). Re-pointed the invariant at
+  "the FULL body never crosses" via a beyond-snippet marker. The test-author + reviewer both re-proved it.
+- **Idempotency is the load-bearing property of a live source** — and the cache being disposable makes it sharp: a
+  rebuild re-emits the recent backlog, so the daemon MUST dedup promises (M1). The fix makes re-processing safe.
+- **Found a doc-vs-code env mismatch** (`METADATA_SERVICE_URL`/`_PROJECT_TOKEN` documented but `METADATA_BASE_URL`/
+  `_TOKEN` read) — fixed by accepting both. Also defaulted a cache blob dir (without it, no `.eml` ⇒ no bodies to triage).
+- **Tooling note:** the Edit matcher couldn't touch one comment region (a `⇒` glyph + a backtick-template line desynced
+  it); used a scoped `perl -i` for that single substitution after confirming `tsc` + a perl read agreed the file was intact.
+
+---
+
 ## 2026-06-06 — Phase 9: digest + daemon loop + E2E + launchd + docs (BUILD COMPLETE) + a security incident
 
 **⚠️ Security incident (prompt-injection targeting subagents)**

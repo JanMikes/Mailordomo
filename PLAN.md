@@ -834,6 +834,50 @@ Lucide, **REST + WebSocket** client to the backend, React Query, light/dark, sen
     by an existing credentials test). The dead `NavRow` branch is a FRONTEND item (left for the frontend implementer).
   - **`npm run verify` GREEN** (1898 tests: backend 772, frontend 71, server 211, shared 844). New backend tests:
     daemon cycle smoke (7), digest smoke (9), digest-endpoint integration smoke (3), the thin E2E (1). No new npm deps.
+- **D36** *(post-Phase-9 — RESOLVES D35's recorded gap: the daemon's live message source)* **The daemon's
+  placeholder source (yielded `[]`) is replaced by a real cache-enumeration source, so real mail now flows
+  poll→triage→state→promises→summary against a connected mailbox.**
+  - **`source/cache-source.ts`** (new) — `createCacheDaemonSource(deps): DaemonSource`. A COMPOSITION module
+    that lives OUTSIDE `daemon/**` and is INJECTED into the daemon (the orchestrator still only sees the
+    `DaemonSource` interface → stays decoupled + structurally send-proof; the daemon imports no `source/**`).
+    Each `poll()`: snapshots the cache cursor → runs the Phase 3 `MailboxSync` over the resilient connection's
+    CURRENT client (read-only on IMAP) → threads the folder (JWZ) and writes the previously-never-populated
+    `thread_root_id` back to the cache (a derived LOCAL index) → enumerates NEW rows (cold-start bounded to the
+    most-recent `initialBacklog`, default 25; thereafter `uid > last_seen_uid`) → upserts each thread
+    (sanctioned subject/snippet/sender only) → reads the body LOCALLY from the on-disk `.eml` → emits
+    `DaemonMessage`s. Resilient (disconnected → `[]`; per-message + per-folder try/catch; never throws).
+  - **`api/server.ts`** (composition root) — builds the live source + ONE `ResilientImapConnection` (own
+    reconnect; IDLE-hot → immediate cycle via a `trigger` box set after `startDaemon` returns; cold poll as the
+    safety net) from the wizard's `ConfigStore` mailbox + the `CredentialStore` IMAP password. **Idle-with-reason
+    when not fully configured** (no mailbox / no metadata creds / no stored password) — connect a mailbox + restart
+    to go live. Also: the cache DB + `.eml` blob dir now default UNDER `$MAILORDOMO_CONFIG_DIR` (the blob dir is
+    REQUIRED for body reads), and the documented `METADATA_SERVICE_URL` / `METADATA_PROJECT_TOKEN` env names are
+    accepted (older `METADATA_BASE_URL` / `METADATA_TOKEN` still work).
+  - **Golden rules (reviewer-confirmed):** #1 — `daemon/**` imports no `smtp`/`api`/barrel; the source is injected;
+    the nudge `DraftFiler` is saveDraft-only; the ESLint sendguard still trips; behavioral `sendCalls===0` over the
+    live source. #2 — writes flow IMAP→cache only; `thread_root_id` is a local index, never pushed. #3 — only
+    `upsertThread` (subject/snippet/**bounded** snippet/sender) crosses; the FULL body is read locally and never
+    enters a server DTO (proven by a beyond-snippet-marker wire scan).
+  - **Test/review split** (separate test-author + independent reviewer, like every phase): test-author added 25
+    intent-derived tests (4 mutation-checked); reviewer verdict **PASS-WITH-CONCERNS**. **Fixes applied** —
+    **M1 (must-fix):** the cycle now dedups `createPromise` against the thread's existing promises (direction+text+
+    due_at), so re-processing a message (a cache rebuild re-emits the recent backlog; an IDLE/poll overlap
+    re-enumerates) never creates duplicate promise rows — the daemon is idempotent for promises (regression-tested
+    over two cycles on the real in-process server). **C1:** `pickTaskContext` now picks the most-recent task
+    (`tasks[0]` over the newest-first list), not the oldest done one. **C2:** `resolveThreadRoots` excludes an
+    empty-string id from the earliest-real fallback (a whitespace-only Message-ID could otherwise fail
+    `MessageIdSchema` and drop a message).
+  - **Deferred (reviewer C3/C4/C5 — pre-existing Phase 3 behavior / patterns, recorded as known limitations):**
+    a message whose `buildMessage` fails is dropped (the sync cursor already advanced past it; a robust design
+    would track a processed-watermark separate from the sync cursor); no graceful IMAP logout on shutdown (launchd
+    tears the process down; pre-existing — the HTTP server isn't closed either); cold start fetches the WHOLE INBOX
+    to disk though only the recent `initialBacklog` is triaged (`initialBacklog` bounds triage, not fetch — a
+    bounded initial fetch range is a future Phase-3 enhancement). **Out of scope (unchanged):** real SMTP send (the
+    send path stays a stub — golden rule #1; the daemon is send-proof); OAuth2/private-repo PAT; the throttle's weekly cap.
+  - **Operator runbook:** `RUNBOOK.md` (connect a Seznam mailbox via the wizard → first sync → Today renders real
+    threads; verify via the Today view, the metadata service, the logs; confirm no bodies/secrets left the machine).
+  - **`npm run verify` GREEN** (1957 tests: backend 823, frontend 79, server 211, shared 844). +31 tests across the
+    seam (5 implementer smoke + 25 intent-derived + 1 dedup regression). No new npm deps.
 
 ---
 
@@ -857,6 +901,7 @@ reviewer before moving on.)*
 - [x] **Phase 7c** — 3-pane fallback + project views ✅
 - [x] **Phase 8** — setup wizard + repo pointers + credentials ✅
 - [x] **Phase 9** — digest + E2E + polish + launchd + docs ✅
+- [x] **D35 closure** — the daemon's live message source (IMAP poll → cache → enumerate) wired; real mail flows poll→triage→state→promises→summary ✅ (→ D36; `RUNBOOK.md`)
 
 > Per-session notes live in `PROGRESS.md` (§4.7); per-phase reviewer notes are appended here.
 
@@ -1227,9 +1272,45 @@ on a genuinely saturated window.
 **No must-fix findings.** The build-runnable-server fix (bundle only `@mailordomo/shared`, keep deps + the native
 better-sqlite3 external, explicit nodemailer `/index.js`) is sound; the launchd scripts are pure-local + secret-free.
 **Deferrals correctly scoped:** the daemon **source is a placeholder** until the Phase 8 creds feed a live IMAP poll →
-cache → metadata enumeration (D35); a durable cross-process summary store; coarse per-thread nudge dedup;
-OAuth2/private-repo PAT; the throttle's weekly cap (D24). (The dead `NavRow` branch **was** removed in the digest-view
-commit.)
+cache → metadata enumeration (D35) — **✅ NOW RESOLVED, see D36 + the closure review below**; a durable cross-process
+summary store; coarse per-thread nudge dedup; OAuth2/private-repo PAT; the throttle's weekly cap (D24). (The dead
+`NavRow` branch **was** removed in the digest-view commit.)
+
+### D35 closure review (independent reviewer, fresh context) — live daemon source
+
+**Verdict:** PASS-WITH-CONCERNS → must-fix + both minor concerns fixed. **`npm run verify` green; 1957 tests**
+(backend 823, frontend 79, server 211, shared 844; +31 across the seam — 5 implementer smoke + 25 intent-derived by
+a separate test-author + 1 dedup regression; 4 mutation-checked). Built via the implementer → separate test-author →
+independent reviewer split (D36).
+
+**All three golden rules confirmed upheld (evidence):** **#1** — `daemon/**` imports no `smtp`/`api`/root-barrel; the
+new live source lives OUTSIDE `daemon/**` and is INJECTED (the daemon only sees the `DaemonSource` interface; nothing
+under `daemon/**` imports `source/**`); the `source → api/thread-detail-view` reuse reaches no transmit path
+(fs/mailparser/shared/cache/threading only); the ESLint sendguard still trips; a transmit-spy `DraftFiler` records
+`sendCalls===0` over the whole live-source→cycle loop. **#2** — writes flow IMAP→cache only (`MailboxSync` opens
+read-only); `setThreadRoot` writes a derived LOCAL index, never pushed; no reconciliation loop. **#3** — only
+`upsertThread` (subject/snippet/sender) + the body-free metadata writes cross; the FULL body is read locally from the
+`.eml` and never enters a server DTO; the snippet is bounded ≤200 (`SnippetSchema` defense-in-depth); proven by a
+beyond-snippet-marker `capturingFetch` scan in both the unit and whole-loop tests.
+
+**Fixed (this closure):** **M1 (must-fix)** — a cache wipe (a supported op; the cache is disposable) re-emitted the
+recent backlog and `cycle.ts` called `createPromise` unconditionally (server does no dedup) → DUPLICATE promise rows.
+Now the cycle dedups against the thread's existing promises (direction+text+due_at); regression test drives two cycles
+over the same message on the REAL in-process server → exactly one promise. **C1** — `pickTaskContext` picked the
+OLDEST done task over a newest-first list → now `tasks[0]` (most recent). **C2** — `resolveThreadRoots` could yield
+`""` for a whitespace-only Message-ID (fails `MessageIdSchema`, drops a message) → the earliest-real fallback now
+excludes empty strings.
+
+**Verified non-issues:** the `trigger.fire` box is always assigned before `onReady` fires (real network connect is
+async); the non-overlapping cycle guard is sound; idempotency across normal polls/restarts holds (`uid > last_seen_uid`,
+monotonic + persisted); the cold-start bound is count-based (sound for sparse Seznam UIDs); env aliasing + the
+config-dir cache move are back-compatible; the "idle when unconfigured" guard opens no connection without creds.
+
+**Deferred (recorded, pre-existing Phase 3 behavior / patterns, NOT this seam's bugs):** a message whose build fails is
+dropped (sync cursor already advanced — a future processed-watermark would fix it); no graceful IMAP logout on shutdown
+(launchd tears the process down; the HTTP server isn't closed either); cold start fetches the whole INBOX to disk
+though only the recent backlog is triaged (a bounded initial fetch range is a future enhancement). Real SMTP send stays
+a stub by design (golden rule #1).
 
 ---
 
