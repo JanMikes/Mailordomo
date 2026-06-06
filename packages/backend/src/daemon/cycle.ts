@@ -126,9 +126,20 @@ async function processMessage(
       { threadId: message.threadId, nowIso: now, actor: AUTOMATED_ACTOR, newId },
     );
     throttle.record('promise-extraction', extraction);
-    for (const promise of extraction.promises) {
-      await metadata.createPromise(toCreatePromise(promise));
-      tallies.promisesCreated += 1;
+    if (extraction.promises.length > 0) {
+      // DEDUP against promises already recorded on this thread, so re-processing a message never
+      // creates duplicate rows. The daemon MUST be idempotent here: the cache is disposable
+      // (rebuild-from-empty re-emits the recent backlog), an IDLE-hot + cold-poll overlap can
+      // re-enumerate, and a re-delivered message would otherwise multiply promises every cycle.
+      const existing = await metadata.listPromises(message.threadId);
+      const seen = new Set(existing.map(promiseDedupKey));
+      for (const promise of extraction.promises) {
+        const key = promiseDedupKey(promise);
+        if (seen.has(key)) continue;
+        seen.add(key); // guard against duplicates WITHIN one extraction too
+        await metadata.createPromise(toCreatePromise(promise));
+        tallies.promisesCreated += 1;
+      }
     }
   }
 
@@ -257,6 +268,15 @@ async function maybeNudge(
     author: AUTOMATED_ACTOR,
   });
   tallies.nudgesDrafted += 1;
+}
+
+/**
+ * Identity of a promise ON A THREAD for dedup: same direction + same (trimmed) text + same resolved
+ * deadline ⇒ the same commitment. Used so re-processing a message never creates a duplicate row.
+ * `JSON.stringify` over the tuple keeps the dedup key unambiguous (no separator collides).
+ */
+function promiseDedupKey(promise: Pick<PromiseRecord, 'direction' | 'text' | 'due_at'>): string {
+  return JSON.stringify([promise.direction, promise.text.trim(), promise.due_at]);
 }
 
 /** Map a reconciled {@link PromiseRecord} onto the body-free create request. */

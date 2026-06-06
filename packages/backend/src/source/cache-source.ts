@@ -142,7 +142,7 @@ export function resolveThreadRoots(rows: readonly MessageRow[]): Map<number, str
 
     const realTreeRoot = isRealMessageIdKey(tree.id) && !tree.synthetic ? tree.id : null;
     const earliestReal = members
-      .filter((m) => m.id !== null)
+      .filter((m) => m.id !== null && m.id !== '')
       .sort((a, b) => a.sortKey - b.sortKey)[0]?.id;
     const firstMember = members[0];
     const fallback = firstMember ? syntheticRootId(firstMember.row) : '<mailordomo-empty@local>';
@@ -168,13 +168,14 @@ function nonEmpty(value: string | null): string | undefined {
 /**
  * Map a thread's tasks to the {@link DaemonTaskContext} the engines reason over. The active
  * (first non-`done`) task wins, else the most recent; an empty list ⇒ a brand-new thread (`id: null`,
- * the orchestrator creates the task in the triaged state). `lastActivityIso` drives staleness.
+ * the orchestrator creates the task in the triaged state). `listTasks` returns newest-first, so
+ * `tasks[0]` is the most-recently-updated task. `lastActivityIso` drives staleness.
  */
 function pickTaskContext(tasks: readonly Task[], lastActivityIso: string): DaemonTaskContext {
   if (tasks.length === 0) {
     return { id: null, state: 'needs-reply', lastActivityIso };
   }
-  const active = tasks.find((task) => task.state !== 'done') ?? tasks[tasks.length - 1];
+  const active = tasks.find((task) => task.state !== 'done') ?? tasks[0];
   if (active === undefined) {
     return { id: null, state: 'needs-reply', lastActivityIso };
   }
