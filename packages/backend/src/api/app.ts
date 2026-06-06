@@ -45,8 +45,14 @@ import {
   UpdateSettingsRequestSchema,
 } from '@mailordomo/shared';
 import type { MessageCache, MessageRow } from '../cache';
-import type { ClaudeRunner, DraftContext } from '../claude';
-import { generateDraft, refineDraft, summarizeThread } from '../claude';
+import type { ClaudeRunner, DraftContext, UsageThrottle } from '../claude';
+import {
+  assembleDigestMetadata,
+  generateDraft,
+  refineDraft,
+  summarizeThread,
+  synthesizeDigest,
+} from '../claude';
 import type { ConfigStore } from '../config';
 import type { CredentialStore } from '../credentials';
 import type { GitRunner } from '../repos';
@@ -83,6 +89,16 @@ export const DEFAULT_LOCAL_ACTOR = 'me';
 /** Default snooze: push `follow_up_at` 24h out when the request body omits an explicit time. */
 const DEFAULT_SNOOZE_MS = 24 * 60 * 60 * 1000;
 
+/** Upper bound on the in-memory pinned-summary memo (Phase 9 polish — prevent unbounded growth). */
+const SUMMARY_MEMO_CAP = 100;
+
+/** The morning-digest window: default 24h, clamped to (0, 168h] (a week). */
+function parseWindowHours(raw: string | undefined): number {
+  const n = raw === undefined ? Number.NaN : Number(raw);
+  if (!Number.isFinite(n) || n <= 0) return 24;
+  return Math.min(n, 24 * 7);
+}
+
 /**
  * A placeholder runner used ONLY to satisfy `LearningDeps.runner` on the revert path (which never
  * calls the model — it restores a local tone snapshot + flips the server flag). It throws if ever run,
@@ -112,8 +128,15 @@ export interface BackendApiDeps {
   readonly checkClaude?: () => Promise<WiringStatus>;
 
   /* ---- Phase 7b (split work surface) — all OPTIONAL; an unconfigured endpoint returns 503 ---- */
-  /** Claude runner — drafting/refine (Opus) + the pinned thread summary (Sonnet). */
+  /** Claude runner — drafting/refine (Opus) + the pinned thread summary + the digest (Sonnet). */
   readonly runner?: ClaudeRunner;
+  /**
+   * Shared usage throttle (Phase 9). When set, the DEFERRABLE morning-digest synthesis is gated on
+   * it (backpressured under a hot subscription window); when unset, the digest synthesizes
+   * best-effort. The daemon shares the same throttle instance so background + on-demand work draw
+   * on one rolling window.
+   */
+  readonly throttle?: UsageThrottle;
   /** LOCAL-only draft persistence (body + refine transcript). Never synced to the server. */
   readonly draftStore?: DraftStore;
   /** Layered tone memory — appended onto `draft.md` (project → mailbox → contact). Optional. */
@@ -190,7 +213,12 @@ export function createBackendApi(deps: BackendApiDeps): Hono {
    */
   const projectNames = createProjectNameResolver(metadata);
 
-  /** In-memory pinned-summary memo, keyed by thread; regenerated only when the message count changes. */
+  /**
+   * In-memory pinned-summary memo, keyed by thread; regenerated only when the message count changes.
+   * Bounded LRU ({@link SUMMARY_MEMO_CAP}) so a long-lived process can't grow it unbounded (Phase 9
+   * polish): Map preserves insertion order, so the oldest key is evicted first; a read re-inserts to
+   * bump recency.
+   */
   const summaryMemo = new Map<string, { count: number; summary: string }>();
 
   const app = new Hono();
@@ -284,6 +312,57 @@ export function createBackendApi(deps: BackendApiDeps): Hono {
       name: await projectNames.resolveName(),
     };
     return c.json(payload, 200);
+  });
+
+  /**
+   * The morning digest (PROJECT.md §9; PLAN.md D34). Assemble the body-free {@link DigestMetadata}
+   * from server metadata (needs-you / promises-due / actor-attributed `handled` / drafted) over a
+   * window (default the last 24h; `?window_hours=N`), then a LOCAL Sonnet synthesis into prose.
+   *
+   * PRIVACY (Golden rule #3): the "what Simona handled" section is built ONLY from actor-attributed
+   * transitions (server metadata — subject + actor), never her body; my-mailbox prose is synthesized
+   * locally; the payload is body-free by construction. Synthesis is DEFERRABLE — gated on the shared
+   * usage throttle (prose is omitted under backpressure or without a runner; metadata always returns).
+   */
+  app.get('/api/digest', async (c) => {
+    const windowHours = parseWindowHours(c.req.query('window_hours'));
+    const nowIso = new Date().toISOString();
+    const windowEnd = nowIso;
+    const windowStart = new Date(Date.parse(nowIso) - windowHours * 60 * 60 * 1000).toISOString();
+    const [tasks, threads, promises, draftMeta, transitions] = await Promise.all([
+      metadata.listTasks().catch(emptyOnError('tasks')),
+      metadata.listThreads().catch(emptyOnError('threads')),
+      metadata.listPromises().catch(emptyOnError('promises')),
+      metadata.listDraftMeta().catch(emptyOnError('drafts')),
+      metadata
+        .listTransitionsInWindow({ start: windowStart, end: windowEnd })
+        .catch(emptyOnError('transitions')),
+    ]);
+    const digestMetadata = assembleDigestMetadata(
+      {
+        projectId: metadata.getProjectId(),
+        tasks,
+        threads,
+        promises,
+        draftMeta,
+        transitions,
+        generatedAtIso: nowIso,
+      },
+      { start: windowStart, end: windowEnd },
+    );
+
+    let prose = '';
+    const throttleOk = deps.throttle === undefined || deps.throttle.check('digest').allowed;
+    if (runner !== undefined && throttleOk) {
+      try {
+        const synthesis = await synthesizeDigest(runner, digestMetadata);
+        deps.throttle?.record('digest', synthesis);
+        prose = synthesis.prose;
+      } catch (cause) {
+        console.error('digest synthesis failed', cause);
+      }
+    }
+    return c.json({ metadata: digestMetadata, prose }, 200);
   });
 
   app.get('/api/settings', (c) => c.json(settingsStore.read(), 200));
@@ -659,7 +738,12 @@ export function createBackendApi(deps: BackendApiDeps): Hono {
   ): Promise<string | null> {
     if (runner === undefined || rows.length === 0) return null;
     const cached = summaryMemo.get(threadId);
-    if (cached !== undefined && cached.count === rows.length) return cached.summary;
+    if (cached !== undefined && cached.count === rows.length) {
+      // LRU bump: re-insert so this thread is the most-recently-used (Map keeps insertion order).
+      summaryMemo.delete(threadId);
+      summaryMemo.set(threadId, cached);
+      return cached.summary;
+    }
     try {
       const messages = await loadThreadMessageInputs(rows);
       const { summary } = await summarizeThread(
@@ -667,6 +751,12 @@ export function createBackendApi(deps: BackendApiDeps): Hono {
         messages,
         subject !== undefined ? { subject } : {},
       );
+      // Evict the oldest entry when at capacity (and this is a new key), then insert.
+      summaryMemo.delete(threadId);
+      if (summaryMemo.size >= SUMMARY_MEMO_CAP) {
+        const oldest = summaryMemo.keys().next().value;
+        if (oldest !== undefined) summaryMemo.delete(oldest);
+      }
       summaryMemo.set(threadId, { count: rows.length, summary });
       return summary;
     } catch (cause) {

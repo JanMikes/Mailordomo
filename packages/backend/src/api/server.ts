@@ -14,7 +14,10 @@ import type { Server } from 'node:http';
 import { serve } from '@hono/node-server';
 import type { WsMessage } from '@mailordomo/shared';
 import { MessageCache } from '../cache';
-import { RealClaudeRunner } from '../claude';
+import { RealClaudeRunner, UsageThrottle, throttleConfigFromEnv } from '../claude';
+import type { NudgeDraft, NudgeFiledResult } from '../claude';
+import { startDaemon } from '../daemon';
+import type { DaemonCycleDeps, DaemonMessage, DaemonSource, DraftFiler } from '../daemon';
 import { createFileConfigStore, resolveConfigFilePath } from '../config';
 import { resolveCredentialStore } from '../credentials';
 import { createFileDraftStore, resolveDraftsDbPath } from '../drafts';
@@ -23,6 +26,7 @@ import { MetadataClient } from '../metadata-client';
 import { createGitRunner } from '../repos';
 import { createFileSettingsStore, resolveSettingsFilePath } from '../settings';
 import { createNodemailerComposer } from '../smtp/nodemailer';
+import { saveDraft } from '../smtp/send';
 import type { SendDeps } from '../smtp/send';
 import { createStubMailTransport } from '../smtp/stub-transport';
 import { ToneStore, resolveToneDir } from '../tone';
@@ -87,6 +91,10 @@ function main(): void {
     transport: createStubMailTransport(),
   };
 
+  // Shared usage throttle (one rolling subscription window across the on-demand digest AND the
+  // background daemon, so background work backpressures before it can starve interactive Claude use).
+  const throttle = new UsageThrottle(throttleConfigFromEnv());
+
   // Phase 8 setup-wizard deps: the LOCAL non-secret config store, the CredentialStore (Keychain-first;
   // the ONLY home for secrets — Golden rule #4), the read-only IMAP connection tester, and the git
   // seam for read-only repo mirrors. No background sync/pull loop is started here (that is Phase 9).
@@ -114,6 +122,7 @@ function main(): void {
     toneStore,
     learningLog,
     sendDeps,
+    throttle,
     configStore,
     credentialStore,
     imapTester,
@@ -125,6 +134,66 @@ function main(): void {
     );
   });
   ws.server = createTodayWsServer({ server: server as unknown as Server });
+
+  // BACKGROUND DAEMON (Phase 9 / D34) — composed HERE, the composition root, so the sanctioned
+  // overdue-nudge `DraftFiler` can wrap `smtp/saveDraft` (this api layer may import smtp; the daemon
+  // is lint-barred and receives the filer INJECTED — it has no path to a transport). Started ONLY when
+  // `MAILORDOMO_DAEMON=on` (launchd sets it); never auto-started in a dev run or in tests (which
+  // import `createBackendApi`, not this entry). Live polling needs the Phase 8 creds wired into a
+  // message source — until then the source yields nothing, so an enabled daemon is a harmless no-op.
+  if ((process.env['MAILORDOMO_DAEMON'] ?? '').toLowerCase() === 'on') {
+    maybeStartDaemon({ metadata, runner, throttle, sendDeps, env });
+  }
+}
+
+/**
+ * The narrow saveDraft-only seam the daemon nudge writes through. Wraps `smtp/saveDraft` (compose +
+ * APPEND to Drafts) — it has NO transmit verb, so the daemon (which never imports smtp) cannot send.
+ * This binding lives in the composition root by design (Golden rule #1 / PLAN.md §4.6).
+ */
+function createNudgeDraftFiler(sendDeps: SendDeps, from: string): DraftFiler {
+  return {
+    async saveDraft(draft: NudgeDraft): Promise<NudgeFiledResult> {
+      const result = await saveDraft(
+        { from, to: [draft.to], subject: draft.subject, text: draft.body },
+        sendDeps,
+      );
+      return { messageId: result.messageId, filedTo: result.filedTo };
+    },
+  };
+}
+
+/**
+ * Compose + start the background daemon. The message source is a placeholder until the Phase 8 creds
+ * feed a live IMAP poll → cache → metadata-thread enumeration; an enabled daemon with the empty source
+ * simply does nothing each cycle. `launchd` runs the process; `MAILORDOMO_DAEMON=on` enables this path.
+ */
+function maybeStartDaemon(deps: {
+  metadata: MetadataClient;
+  runner: RealClaudeRunner;
+  throttle: UsageThrottle;
+  sendDeps: SendDeps;
+  env: BackendEnv;
+}): void {
+  const fromAddress = process.env['MAILORDOMO_NUDGE_FROM'] ?? deps.metadata.getProjectId();
+  const filer = createNudgeDraftFiler(deps.sendDeps, fromAddress);
+  // Live cache-enumeration source lands with the Phase 8 credentials + sync wiring; until then there
+  // is no connected mailbox, so polling yields nothing (the daemon is structurally ready, idle).
+  const source: DaemonSource = { poll: (): Promise<DaemonMessage[]> => Promise.resolve([]) };
+  const daemonDeps: DaemonCycleDeps = {
+    source,
+    runner: deps.runner,
+    throttle: deps.throttle,
+    metadata: deps.metadata,
+    filer,
+  };
+  const intervalRaw = process.env['MAILORDOMO_DAEMON_INTERVAL_MS'];
+  const intervalMs = intervalRaw ? Number.parseInt(intervalRaw, 10) : 5 * 60 * 1000;
+  startDaemon(daemonDeps, {
+    intervalMs: Number.isFinite(intervalMs) && intervalMs > 0 ? intervalMs : 5 * 60 * 1000,
+    onCycle: (result) => console.log('[daemon] cycle complete', result),
+    onError: (error) => console.error('[daemon] cycle error', error),
+  });
 }
 
 main();

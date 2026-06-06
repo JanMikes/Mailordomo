@@ -36,6 +36,7 @@ export * from './prompts';
 export * from './triage-schema';
 export * from './triage';
 export * from './summarize';
+export * from './digest';
 export * from './promise-extraction-schema';
 export * from './extract-promises';
 export * from './nudge';

@@ -1,18 +1,20 @@
 /**
- * Background daemon — poll -> triage -> state -> promises -> stale -> summarize.
+ * Background daemon (PROJECT.md §6; PLAN.md D34) — poll → triage + state inference → 3-way promise
+ * tracking → stale detection → thread summarization → the sanctioned overdue-nudge (draft, never
+ * send). The orchestrator (`runDaemonCycle`) composes the existing engines over an injected message
+ * source; `startDaemon` runs it on an IDLE-hot + poll-cold cadence.
  *
  * STRUCTURAL NO-SEND GUARD (Golden rule #1 / PLAN.md §4.6): this module, and everything under
- * `daemon/**`, must have NO import path to `../smtp/send`. The daemon may DRAFT (including the one
- * sanctioned overdue-nudge case) but it can never reach the code that transmits over SMTP.
- * The boundary is enforced by the `no-restricted-imports` rule in `eslint.config.js`, which fails
- * `lint` — and therefore the commit/push gate — before tests even run. See `sendguard.test.ts`.
- *
- * Phase 0 is just the marker; the real daemon lands in Phases 4-9.
- *
- * NUDGE WIRING NOTE (Golden rule #1): when the daemon triggers the sanctioned overdue-nudge it runs
- * the PURE lapsed-promise predicate + the Opus draft job, but the `DraftFiler` (which wraps
- * `saveDraft`) MUST be injected from the API/orchestrator layer — never imported here. `saveDraft`
- * lives under `smtp/**`, which the lint guard forbids the daemon from importing, so binding the
- * filer inside `daemon/**` would fail `lint`. Keep the filer binding outside the daemon.
+ * `daemon/**`, has NO import path to `smtp/**`, `api/**`, or the backend root barrel — the D18/D31
+ * `no-restricted-imports`/`no-restricted-syntax` ESLint rules fail `lint` (and the commit/push gate)
+ * on any such import, before tests run. The daemon may DRAFT (including the one sanctioned overdue
+ * nudge), but the {@link DraftFiler} that performs the save is a narrow, transmit-free seam
+ * constructed OUTSIDE the daemon (in the composition root, which may import smtp) and INJECTED here.
+ * Result: it is structurally impossible for the daemon to send. The Phase 9 smoke + E2E tests assert
+ * the behavior (0 real sends; a hostile transmit-spy filer is never reached with a transmit verb).
  */
 export const DAEMON_NAME = 'mailordomo-daemon' as const;
+
+export * from './types';
+export * from './cycle';
+export * from './loop';
