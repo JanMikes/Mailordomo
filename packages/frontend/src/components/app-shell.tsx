@@ -5,7 +5,15 @@
  * deliberate "never trap the user in the opinionated view" escape hatch (CLAUDE.md / PROJECT.md §11).
  */
 import type { ReactNode } from 'react';
-import { Columns3, Folders, History, ListTodo, Mailbox, type LucideIcon } from 'lucide-react';
+import {
+  Columns3,
+  Folders,
+  History,
+  ListTodo,
+  Mailbox,
+  Wrench,
+  type LucideIcon,
+} from 'lucide-react';
 
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { useNav } from '@/lib/navigation';
@@ -49,6 +57,12 @@ export function AppShell({ children }: { children: ReactNode }) {
       Icon: Columns3,
       active: !onThread && nav.view === 'three-pane',
       onClick: () => nav.goTo('three-pane'),
+    },
+    {
+      label: 'Setup',
+      Icon: Wrench,
+      active: !onThread && nav.view === 'setup',
+      onClick: () => nav.goTo('setup'),
     },
   ];
 

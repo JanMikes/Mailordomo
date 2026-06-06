@@ -16,6 +16,7 @@ import { TodayPage } from './components/today/today-page';
 import { MemoryPage } from './components/memory/memory-page';
 import { ProjectsBoardPage } from './components/projects/projects-board-page';
 import { ThreePanePage } from './components/three-pane/three-pane-page';
+import { SetupPage } from './components/setup/setup-page';
 import { WorkSurface } from './components/work-surface/work-surface';
 import { Skeleton } from './components/ui/skeleton';
 import { useSettingsQuery } from './lib/today-hooks';
@@ -85,6 +86,7 @@ function MainView({ view }: { view: AppView | null }) {
   if (view === 'memory') return <MemoryPage />;
   if (view === 'all-projects') return <ProjectsBoardPage />;
   if (view === 'three-pane') return <ThreePanePage />;
+  if (view === 'setup') return <SetupPage />;
   return <TodayPage />;
 }
 

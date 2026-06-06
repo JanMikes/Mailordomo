@@ -13,9 +13,10 @@ import { createContext, useContext } from 'react';
 /**
  * The top-level views reachable from the sidebar (the thread work surface is opened separately):
  * the opinionated `today` command center, the `memory` changelog, the all-projects board
- * (`all-projects`), and the classic `three-pane` fallback — the "never trapped" escape hatch (D32).
+ * (`all-projects`), the classic `three-pane` fallback — the "never trapped" escape hatch (D32) — and
+ * the `setup` wizard (project → mailbox → repo → Claude health) plus raw-config view (Phase 8 / D33).
  */
-export type AppView = 'today' | 'memory' | 'all-projects' | 'three-pane';
+export type AppView = 'today' | 'memory' | 'all-projects' | 'three-pane' | 'setup';
 
 export interface NavController {
   /** The currently selected top-level view (ignored while a thread work surface is open). */

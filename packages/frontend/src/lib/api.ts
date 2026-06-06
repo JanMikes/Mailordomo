@@ -13,27 +13,50 @@
  */
 import type {
   AcquireLockResponse,
+  AddMailboxRequest,
+  AddProjectRequest,
   AppSettings,
+  CredentialKind,
+  CredentialPresence,
   LearningEntry,
+  LinkRepoRequest,
   Lock,
+  MailboxConfigResponse,
+  MailordomoConfig,
+  ProjectConfig,
   ProjectResponse,
   ProjectsBoard,
+  ProviderPreset,
   ReleaseLockResponse,
+  RepoConfigResponse,
+  StoreCredentialRequest,
   Task,
+  TestConnectionResult,
   ThreadDetail,
   TodayReadModel,
+  UpdateMailboxRequest,
   UpdateSettingsRequest,
 } from '@mailordomo/shared';
 import {
   AcquireLockResponseSchema,
   AppSettingsSchema,
+  CredentialPresenceSchema,
   LearningEntryListResponseSchema,
   LearningEntrySchema,
   LockSchema,
+  MailboxConfigResponseSchema,
+  MailboxListResponseSchema,
+  MailordomoConfigSchema,
+  ProjectConfigSchema,
+  ProjectListResponseSchema,
   ProjectResponseSchema,
   ProjectsBoardResponseSchema,
+  ProviderPresetListResponseSchema,
   ReleaseLockResponseSchema,
+  RepoConfigResponseSchema,
+  RepoListResponseSchema,
   TaskSchema,
+  TestConnectionResultSchema,
   ThreadDetailSchema,
   TodayReadModelSchema,
 } from '@mailordomo/shared';
@@ -49,6 +72,20 @@ export const queryKeys = {
   messageBody: (threadId: string, messageId: string) =>
     ['thread', threadId, 'body', messageId] as const,
   draft: (threadId: string) => ['thread', threadId, 'draft'] as const,
+  /**
+   * Setup-wizard query keys (Phase 8 / D33). GOLDEN RULE #4: a key NEVER contains a secret — the
+   * credential key carries only the `(account, kind)` SLOT identity, never the password/token value.
+   */
+  wizard: {
+    presets: ['wizard', 'presets'] as const,
+    health: ['wizard', 'health'] as const,
+    config: ['wizard', 'config'] as const,
+    projects: ['wizard', 'projects'] as const,
+    mailboxes: ['wizard', 'mailboxes'] as const,
+    repos: ['wizard', 'repos'] as const,
+    credential: (account: string, kind: CredentialKind) =>
+      ['wizard', 'credential', account, kind] as const,
+  },
 };
 
 const JSON_HEADERS = { 'Content-Type': 'application/json' } as const;
@@ -284,5 +321,169 @@ export async function revertLearning(id: string): Promise<LearningEntry> {
       headers: JSON_HEADERS,
       body: '{}',
     }),
+  );
+}
+
+/* ========================= Phase 8 — setup wizard (D33) ==========================
+ *
+ * GOLDEN RULE #4 governs this whole section:
+ *   - A secret enters ONLY as an inbound request BODY field — `addMailbox`'s `imapPassword`/
+ *     `smtpPassword`, `updateMailbox`'s `*Password`, and `storeCredential`'s `secret`. It is POSTed to
+ *     the LOCAL backend and never returned, never logged (the `request` helper logs nothing), and
+ *     never placed in a URL or query key.
+ *   - Every RESPONSE is parsed against a SECRET-FREE shared schema (`MailboxConfigResponse` carries
+ *     credential PRESENCE booleans only; `CredentialPresence` is a boolean; `test-connection` returns
+ *     `{ ok, reason }` with no credential). A smuggled secret field would fail `parse()` loudly.
+ */
+
+/** Claude binary health (`GET /api/wizard/health`) — a backend-local `{ ok, detail }` shape. */
+export interface WizardHealth {
+  readonly ok: boolean;
+  readonly detail: string;
+}
+
+/** The result of a manual repo mirror refresh (`POST …/repos/:id/pull`) — a backend-local shape. */
+export interface RepoPullResult {
+  readonly ok: boolean;
+  readonly reason: string;
+}
+
+/** GET the provider presets (host/port/secure + guidance) for the mailbox step. */
+export async function fetchPresets(): Promise<ProviderPreset[]> {
+  return ProviderPresetListResponseSchema.parse(await request('/wizard/presets')).presets;
+}
+
+/** GET the Claude binary health (resolve + `--version`); never throws on a red layer — it reports it. */
+export async function fetchWizardHealth(): Promise<WizardHealth> {
+  return (await request('/wizard/health')) as WizardHealth;
+}
+
+/** GET the whole NON-secret config (projects → mailboxes → repos) for the advanced/raw view. */
+export async function fetchWizardConfig(): Promise<MailordomoConfig> {
+  return MailordomoConfigSchema.parse(await request('/wizard/config'));
+}
+
+/** GET the configured projects. */
+export async function fetchWizardProjects(): Promise<ProjectConfig[]> {
+  return ProjectListResponseSchema.parse(await request('/wizard/projects')).projects;
+}
+
+/** POST a new project `{ id?, name }`. */
+export async function createProject(body: AddProjectRequest): Promise<ProjectConfig> {
+  return ProjectConfigSchema.parse(
+    await request('/wizard/projects', {
+      method: 'POST',
+      headers: JSON_HEADERS,
+      body: JSON.stringify(body),
+    }),
+  );
+}
+
+/** GET the configured mailboxes (each with credential-PRESENCE booleans — never the secret). */
+export async function fetchMailboxes(): Promise<MailboxConfigResponse[]> {
+  return MailboxListResponseSchema.parse(await request('/wizard/mailboxes')).mailboxes;
+}
+
+/**
+ * POST a new mailbox. `imapPassword`/`smtpPassword` are ⚠️ WRITE-ONLY inbound fields — the backend
+ * routes them to the CredentialStore; the response is the secret-free {@link MailboxConfigResponse}.
+ */
+export async function addMailbox(body: AddMailboxRequest): Promise<MailboxConfigResponse> {
+  return MailboxConfigResponseSchema.parse(
+    await request('/wizard/mailboxes', {
+      method: 'POST',
+      headers: JSON_HEADERS,
+      body: JSON.stringify(body),
+    }),
+  );
+}
+
+/** PATCH a mailbox's endpoints and/or its stored passwords (same write-only-secret rule). */
+export async function updateMailbox(
+  id: string,
+  body: UpdateMailboxRequest,
+): Promise<MailboxConfigResponse> {
+  return MailboxConfigResponseSchema.parse(
+    await request(`/wizard/mailboxes/${encodeURIComponent(id)}`, {
+      method: 'PATCH',
+      headers: JSON_HEADERS,
+      body: JSON.stringify(body),
+    }),
+  );
+}
+
+/** POST a read-only IMAP login test for a saved mailbox → `{ ok, reason }` (no credential crosses). */
+export async function testConnection(id: string): Promise<TestConnectionResult> {
+  return TestConnectionResultSchema.parse(
+    await request(`/wizard/mailboxes/${encodeURIComponent(id)}/test-connection`, {
+      method: 'POST',
+      headers: JSON_HEADERS,
+      body: '{}',
+    }),
+  );
+}
+
+/** GET the linked repos (shareable identity + machine-local clone/pull config). */
+export async function fetchRepos(): Promise<RepoConfigResponse[]> {
+  return RepoListResponseSchema.parse(await request('/wizard/repos')).repos;
+}
+
+/**
+ * POST a repo link. Local-path mode sends `local_path`; git-URL mirror mode omits it. `active_pull`
+ * enables the scheduled fetch for a mirror. Only the repo IDENTITY (name + git_url) is shareable.
+ */
+export async function linkRepo(body: LinkRepoRequest): Promise<RepoConfigResponse> {
+  return RepoConfigResponseSchema.parse(
+    await request('/wizard/repos', {
+      method: 'POST',
+      headers: JSON_HEADERS,
+      body: JSON.stringify(body),
+    }),
+  );
+}
+
+/** POST an explicit mirror refresh (clone-if-absent, else fetch) — a user action, no background loop. */
+export async function pullRepo(id: string): Promise<RepoPullResult> {
+  return (await request(`/wizard/repos/${encodeURIComponent(id)}/pull`, {
+    method: 'POST',
+    headers: JSON_HEADERS,
+    body: '{}',
+  })) as RepoPullResult;
+}
+
+/**
+ * PUT a single secret to the CredentialStore. `secret` is ⚠️ WRITE-ONLY — the response is a
+ * {@link CredentialPresence} (a boolean), never the value.
+ */
+export async function storeCredential(body: StoreCredentialRequest): Promise<CredentialPresence> {
+  return CredentialPresenceSchema.parse(
+    await request('/wizard/credentials', {
+      method: 'PUT',
+      headers: JSON_HEADERS,
+      body: JSON.stringify(body),
+    }),
+  );
+}
+
+/** GET whether a credential slot is populated — PRESENCE only, never the value. */
+export async function fetchCredentialPresence(
+  account: string,
+  kind: CredentialKind,
+): Promise<CredentialPresence> {
+  return CredentialPresenceSchema.parse(
+    await request(`/wizard/credentials/${encodeURIComponent(account)}/${encodeURIComponent(kind)}`),
+  );
+}
+
+/** DELETE a stored credential → presence `false`. */
+export async function deleteCredential(
+  account: string,
+  kind: CredentialKind,
+): Promise<CredentialPresence> {
+  return CredentialPresenceSchema.parse(
+    await request(
+      `/wizard/credentials/${encodeURIComponent(account)}/${encodeURIComponent(kind)}`,
+      { method: 'DELETE' },
+    ),
   );
 }
