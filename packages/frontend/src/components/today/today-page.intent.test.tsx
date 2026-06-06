@@ -25,6 +25,9 @@ vi.mock('@/lib/today-hooks', () => ({
   useUpdateSettings: () => ({ mutate: vi.fn(), isPending: false }),
   useMarkDone: () => ({ mutate: vi.fn(), isPending: false }),
   useSnooze: () => ({ mutate: vi.fn(), isPending: false }),
+  // Phase 9 / D35: the header now renders <SyncNowButton/>, which calls useSyncNow — the partial mock
+  // must expose it too, or rendering TodayPage throws "No useSyncNow export ... on the mock".
+  useSyncNow: () => ({ mutate: vi.fn(), isPending: false, error: null }),
 }));
 vi.mock('@/lib/useWs', () => ({ useWsToday: () => {} }));
 
