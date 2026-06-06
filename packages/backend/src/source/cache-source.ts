@@ -105,11 +105,14 @@ function syntheticRootId(row: MessageRow): string {
 /**
  * PURE: thread a folder's cache rows and resolve each row's metadata `root_message_id`.
  *
- * The root is, in order of preference: the JWZ tree-root's id when it is a REAL message-id (this both
- * groups own-root messages under themselves AND groups replies under a referenced-but-unfetched
- * original — e.g. a root that lives in Sent); else the earliest real message-id in the tree; else a
- * contained synthetic id derived from (folder, uid). The result always satisfies `MessageIdSchema`
- * (a non-empty string), so it is a safe `upsertThread` key. Exported for the test author.
+ * The root is, in order of preference: the JWZ tree-root's id when it is a REAL message-id (this
+ * groups own-root messages under themselves, AND groups TWO-OR-MORE replies to a referenced-but-
+ * unfetched original — e.g. a root that lives in Sent — under that original's kept grouping container);
+ * else the earliest real message-id in the tree; else a contained synthetic id derived from
+ * (folder, uid). NOTE: a LONE reply to an unfetched original self-roots — JWZ prunes the empty
+ * single-child container, so the tree root becomes the reply and it falls to the earliest-real branch
+ * (its own id); it merges correctly once the original or a sibling syncs. The result always satisfies
+ * `MessageIdSchema` (a non-empty string), so it is a safe `upsertThread` key. Exported for the test author.
  */
 export function resolveThreadRoots(rows: readonly MessageRow[]): Map<number, string> {
   const items = rows.map((row) => ({
