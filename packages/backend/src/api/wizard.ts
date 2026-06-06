@@ -36,7 +36,14 @@ import {
   UpdateMailboxRequestSchema,
 } from '@mailordomo/shared';
 import type { ConfigStore } from '../config';
-import { addMailbox, addProject, ConfigError, linkRepo, updateMailbox } from '../config';
+import {
+  addMailbox,
+  addProject,
+  ConfigError,
+  linkRepo,
+  removeMailbox,
+  updateMailbox,
+} from '../config';
 import type { CredentialStore } from '../credentials';
 import { isSafeAccount } from '../credentials';
 import type { GitRunner } from '../repos';
@@ -192,6 +199,34 @@ export function registerWizardRoutes(app: Hono, deps: WizardDeps): void {
     if (imapPassword !== undefined) await credentialStore.set(id, 'imap', imapPassword);
     if (smtpPassword !== undefined) await credentialStore.set(id, 'smtp', smtpPassword);
     return c.json(await mailboxResponse(stored), 200);
+  });
+
+  /**
+   * Remove a mailbox: drop the NON-secret config entry AND both credential slots (imap + smtp) from the
+   * CredentialStore. Credential deletion is best-effort/idempotent (a no-op when a slot is absent). No
+   * secret is read or echoed (Golden rule #4). NOTE: the running daemon binds its watched mailbox at
+   * startup (single-mailbox v1, D32) — removing it fully takes effect on the next backend restart.
+   */
+  app.delete('/api/wizard/mailboxes/:id', async (c) => {
+    const id = c.req.param('id');
+    try {
+      configStore.update((cfg) => removeMailbox(cfg, id));
+    } catch (err) {
+      if (err instanceof ConfigError)
+        return c.json({ error: err.message, code: err.code }, statusFor(err));
+      throw err;
+    }
+    // Best-effort: the config row is already gone, so never let a Keychain hiccup (the `security` CLI
+    // can throw on a real error) turn a successful removal into a 500. Log + continue; a missed slot is
+    // orphaned but unreferenced (and overwritten if the same id is ever re-added).
+    await Promise.all(
+      (['imap', 'smtp'] as const).map((kind) =>
+        credentialStore.delete(id, kind).catch((cause: unknown) => {
+          console.error(`[wizard] failed to delete ${kind} credential for mailbox ${id}`, cause);
+        }),
+      ),
+    );
+    return c.json({ id, removed: true }, 200);
   });
 
   /**

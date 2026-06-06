@@ -137,6 +137,13 @@ export interface BackendApiDeps {
    * on one rolling window.
    */
   readonly throttle?: UsageThrottle;
+  /**
+   * Manual-sync control (Phase 9 / D35). A mutable box the composition root fills with the live
+   * daemon's `runCycleNow` once it starts; `POST /api/sync` triggers an immediate poll→triage cycle
+   * through it. Left unset (or `runCycleNow` undefined) when the daemon is off/idle, so the endpoint
+   * reports 503. Triggering a cycle only polls + drafts — it NEVER sends (Golden rule #1).
+   */
+  readonly syncControl?: { runCycleNow?: () => void };
   /** LOCAL-only draft persistence (body + refine transcript). Never synced to the server. */
   readonly draftStore?: DraftStore;
   /** Layered tone memory — appended onto `draft.md` (project → mailbox → contact). Optional. */
@@ -363,6 +370,29 @@ export function createBackendApi(deps: BackendApiDeps): Hono {
       }
     }
     return c.json({ metadata: digestMetadata, prose }, 200);
+  });
+
+  /**
+   * Manual sync (Phase 9 / D35) — trigger an immediate poll→triage cycle on the running daemon instead
+   * of waiting for the cold-poll interval or an IDLE push. 202 when a cycle is kicked; 503 when the
+   * daemon isn't live (off, or no mailbox/credentials yet). `runCycleNow` is fire-and-forget and
+   * non-overlapping (a tick during a running cycle is coalesced); the cycle broadcasts `today:changed`
+   * on completion so the UI refreshes. It only polls + drafts — it NEVER sends (Golden rule #1).
+   */
+  app.post('/api/sync', (c) => {
+    const runCycleNow = deps.syncControl?.runCycleNow;
+    if (runCycleNow === undefined) {
+      return c.json(
+        {
+          ok: false,
+          reason:
+            'daemon not running — set MAILORDOMO_DAEMON=on, connect a mailbox in Setup, then restart the backend',
+        },
+        503,
+      );
+    }
+    runCycleNow();
+    return c.json({ ok: true, status: 'sync triggered' }, 202);
   });
 
   app.get('/api/settings', (c) => c.json(settingsStore.read(), 200));

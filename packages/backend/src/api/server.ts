@@ -122,6 +122,10 @@ function main(): void {
     ws.server?.broadcast(msg);
   };
 
+  // Mutable control box, filled below with the live daemon's `runCycleNow` so `POST /api/sync` can
+  // trigger an immediate poll→triage cycle. Stays empty when the daemon is off/idle → /api/sync 503s.
+  const syncControl: { runCycleNow?: () => void } = {};
+
   const app = createBackendApi({
     metadata,
     cache,
@@ -138,6 +142,7 @@ function main(): void {
     credentialStore,
     imapTester,
     gitRunner,
+    syncControl,
   });
   const server = serve({ fetch: app.fetch, port: env.port, hostname: env.host }, (info) => {
     console.log(
@@ -163,6 +168,8 @@ function main(): void {
       cache,
       configStore,
       credentialStore,
+      syncControl,
+      broadcast,
     }).catch((error: unknown) => console.error('[daemon] failed to start', error));
   }
 }
@@ -210,8 +217,13 @@ async function maybeStartDaemon(deps: {
   cache: MessageCache;
   configStore: ReturnType<typeof createFileConfigStore>;
   credentialStore: CredentialStore;
+  /** Filled with the daemon's `runCycleNow` once live, so `POST /api/sync` can trigger a cycle. */
+  syncControl: { runCycleNow?: () => void };
+  /** Push a `today:changed` after each cycle so the UI refreshes on background/manual sync. */
+  broadcast: (msg: WsMessage) => void;
 }): Promise<void> {
   const { metadata, runner, throttle, sendDeps, env, cache, configStore, credentialStore } = deps;
+  const { syncControl, broadcast } = deps;
   const fromAddress = process.env['MAILORDOMO_NUDGE_FROM'] ?? metadata.getProjectId();
   const filer = createNudgeDraftFiler(sendDeps, fromAddress);
 
@@ -274,11 +286,23 @@ async function maybeStartDaemon(deps: {
       intervalMs,
       immediate: false, // `onReady` fires the first cycle once the connection is up
       connection,
-      onCycle: (result) => console.log('[daemon] cycle complete', result),
+      onCycle: (result) => {
+        console.log('[daemon] cycle complete', result);
+        // Nudge connected clients to refetch Today (cold poll + IDLE new-mail + manual /api/sync).
+        // Guard the broadcast: `onCycle` runs in the loop's `.then` (NOT covered by its `.catch`), so a
+        // throwing WS push would become an unhandled rejection rather than just a missed refresh.
+        try {
+          broadcast({ type: 'today:changed' });
+        } catch (cause) {
+          console.error('[daemon] today:changed broadcast failed', cause);
+        }
+      },
       onError: (error) => console.error('[daemon] cycle error', error),
     },
   );
   trigger.fire = handle.runCycleNow;
+  // Expose the live cycle trigger to POST /api/sync (the "Sync now" button).
+  syncControl.runCycleNow = handle.runCycleNow;
   console.log(
     `[daemon] live: watching ${mailbox.address} INBOX via ${mailbox.imap.host} ` +
       `(cold poll ${intervalMs}ms, IDLE-hot on new mail).`,

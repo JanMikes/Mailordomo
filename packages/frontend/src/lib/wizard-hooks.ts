@@ -22,6 +22,7 @@ import {
   addMailbox,
   createProject,
   deleteCredential,
+  deleteMailbox,
   fetchCredentialPresence,
   fetchMailboxes,
   fetchPresets,
@@ -113,6 +114,18 @@ export function useUpdateMailbox() {
   return useMutation({
     mutationFn: (vars: { id: string; patch: UpdateMailboxRequest }) =>
       updateMailbox(vars.id, vars.patch),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: queryKeys.wizard.config });
+      void qc.invalidateQueries({ queryKey: queryKeys.wizard.mailboxes });
+    },
+  });
+}
+
+/** Remove a mailbox (config entry + both Keychain credential slots); refresh the config + list. */
+export function useDeleteMailbox() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => deleteMailbox(id),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: queryKeys.wizard.config });
       void qc.invalidateQueries({ queryKey: queryKeys.wizard.mailboxes });

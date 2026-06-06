@@ -11,6 +11,7 @@ import { SlidersHorizontal, Wand2 } from 'lucide-react';
 
 import { SegmentedControl } from './parts';
 import { AdvancedConfig } from './advanced-config';
+import { MailboxList } from './mailbox-list';
 import { SetupWizard } from './setup-wizard';
 
 type Mode = 'guided' | 'advanced';
@@ -37,6 +38,8 @@ export function SetupPage() {
           ]}
         />
       </div>
+
+      <MailboxList />
 
       {mode === 'guided' ? <SetupWizard /> : <AdvancedConfig />}
     </div>

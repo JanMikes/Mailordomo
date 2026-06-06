@@ -70,6 +70,18 @@ export function updateMailbox(
 }
 
 /**
+ * Remove a mailbox by id. Throws `not_found` if absent. Pure over config: it drops only the NON-secret
+ * mailbox entry — the API handler separately clears that mailbox's credentials from the CredentialStore
+ * (Golden rule #4: this module never touches secrets).
+ */
+export function removeMailbox(config: MailordomoConfig, id: string): MailordomoConfig {
+  if (!config.mailboxes.some((m) => m.id === id)) {
+    throw new ConfigError(`unknown mailbox "${id}"`, 'not_found');
+  }
+  return { ...config, mailboxes: config.mailboxes.filter((m) => m.id !== id) };
+}
+
+/**
  * Upsert a linked repo: the shareable {@link RepoPointer} identity (into `repoPointers`) + the
  * machine-local {@link LocalRepoConfig} (into `repos`), keyed by `pointer.id` / `repo_pointer_id`. The
  * caller guarantees `local.repo_pointer_id === pointer.id`. Re-linking the same id replaces both.

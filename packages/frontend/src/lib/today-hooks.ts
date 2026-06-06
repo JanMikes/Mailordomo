@@ -9,7 +9,15 @@
  */
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { UpdateSettingsRequest } from '@mailordomo/shared';
-import { fetchSettings, fetchToday, markDone, queryKeys, snooze, updateSettings } from './api';
+import {
+  fetchSettings,
+  fetchToday,
+  markDone,
+  queryKeys,
+  snooze,
+  triggerSync,
+  updateSettings,
+} from './api';
 
 export function useTodayQuery() {
   return useQuery({ queryKey: queryKeys.today, queryFn: fetchToday });
@@ -45,6 +53,22 @@ export function useSnooze() {
   return useMutation({
     mutationFn: (vars: { threadId: string; followUpAt?: string }) =>
       snooze(vars.threadId, vars.followUpAt),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: queryKeys.today });
+    },
+  });
+}
+
+/**
+ * Trigger an immediate daemon poll→triage cycle ("Sync now"). The cycle runs in the background and
+ * broadcasts `today:changed` when it finishes (so the view refetches then); we also invalidate Today on
+ * the 202 so the current state reloads right away. Throws an `ApiError` 503 when the daemon isn't live —
+ * the caller surfaces that calmly. GOLDEN RULE #1: a sync only polls + drafts, it never sends.
+ */
+export function useSyncNow() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => triggerSync(),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: queryKeys.today });
     },

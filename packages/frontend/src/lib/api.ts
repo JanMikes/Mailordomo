@@ -216,6 +216,27 @@ export async function snooze(threadId: string, followUpAt?: string): Promise<Tas
   );
 }
 
+/** The result of a manual sync trigger (`POST /api/sync`) — a backend-local control shape. */
+export interface SyncResult {
+  readonly ok: boolean;
+  /** Present on a 202 success. */
+  readonly status?: string;
+}
+
+/**
+ * POST a manual sync — ask the running daemon to run an immediate poll→triage cycle (instead of waiting
+ * for the cold-poll interval or an IDLE push). Resolves `{ ok: true }` on 202. Throws an {@link ApiError}
+ * 503 when the daemon isn't live (off, or no mailbox/credentials yet) so the caller can surface a calm
+ * "turn the daemon on" message via `err.code`. GOLDEN RULE #1: this only polls + drafts; it never sends.
+ */
+export async function triggerSync(): Promise<SyncResult> {
+  return (await request('/sync', {
+    method: 'POST',
+    headers: JSON_HEADERS,
+    body: '{}',
+  })) as SyncResult;
+}
+
 /* ============================ Phase 7b — work surface ============================ */
 /*
  * GOLDEN RULE #3: every call below is to the LOCAL 127.0.0.1 backend (the `/api` proxy). Draft
@@ -437,6 +458,19 @@ export async function updateMailbox(
       body: JSON.stringify(body),
     }),
   );
+}
+
+/** The result of removing a mailbox (`DELETE /api/wizard/mailboxes/:id`) — a backend-local shape. */
+export interface DeleteMailboxResult {
+  readonly id: string;
+  readonly removed: boolean;
+}
+
+/** DELETE a mailbox — drops its NON-secret config entry AND both Keychain credential slots. */
+export async function deleteMailbox(id: string): Promise<DeleteMailboxResult> {
+  return (await request(`/wizard/mailboxes/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+  })) as DeleteMailboxResult;
 }
 
 /** POST a read-only IMAP login test for a saved mailbox → `{ ok, reason }` (no credential crosses). */
