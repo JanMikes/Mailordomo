@@ -1,8 +1,9 @@
 /**
  * The app shell: a left sidebar (wordmark + primary nav + theme toggle) and the scrollable main
- * surface. All four primary views — "Today", "Memory", "All projects" (the projects board), and
- * "3-pane" (the classic fallback) — are LIVE, switched through `NavContext` (D32). The 3-pane is the
- * deliberate "never trap the user in the opinionated view" escape hatch (CLAUDE.md / PROJECT.md §11).
+ * surface. Every primary view — "Today", "Digest" (the morning briefing), "Memory", "All projects"
+ * (the projects board), "3-pane" (the classic fallback), and "Setup" — is LIVE, switched through
+ * `NavContext` (D32 / D34). The 3-pane is the deliberate "never trap the user in the opinionated view"
+ * escape hatch (CLAUDE.md / PROJECT.md §11).
  */
 import type { ReactNode } from 'react';
 import {
@@ -11,11 +12,11 @@ import {
   History,
   ListTodo,
   Mailbox,
+  Sunrise,
   Wrench,
   type LucideIcon,
 } from 'lucide-react';
 
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { useNav } from '@/lib/navigation';
 import { cn } from '@/lib/utils';
 import { ThemeToggle } from './theme-toggle';
@@ -24,8 +25,6 @@ interface NavItem {
   label: string;
   Icon: LucideIcon;
   active?: boolean;
-  disabled?: boolean;
-  hint?: string;
   onClick?: () => void;
 }
 
@@ -39,6 +38,12 @@ export function AppShell({ children }: { children: ReactNode }) {
       Icon: ListTodo,
       active: !onThread && nav.view === 'today',
       onClick: () => nav.goTo('today'),
+    },
+    {
+      label: 'Digest',
+      Icon: Sunrise,
+      active: !onThread && nav.view === 'digest',
+      onClick: () => nav.goTo('digest'),
     },
     {
       label: 'Memory',
@@ -96,24 +101,6 @@ export function AppShell({ children }: { children: ReactNode }) {
 function NavRow({ item }: { item: NavItem }) {
   const base =
     'flex items-center gap-2.5 rounded-md px-2.5 py-2 text-sm font-medium transition-colors';
-
-  if (item.disabled) {
-    return (
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <span
-            tabIndex={0}
-            aria-disabled="true"
-            className={cn(base, 'text-muted-foreground/50 cursor-not-allowed outline-none')}
-          >
-            <item.Icon className="size-4" aria-hidden />
-            {item.label}
-          </span>
-        </TooltipTrigger>
-        <TooltipContent side="right">{item.hint}</TooltipContent>
-      </Tooltip>
-    );
-  }
 
   return (
     <button

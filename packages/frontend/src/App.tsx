@@ -13,6 +13,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { AppShell } from './components/app-shell';
 import { TodayPage } from './components/today/today-page';
+import { DigestPage } from './components/digest/digest-page';
 import { MemoryPage } from './components/memory/memory-page';
 import { ProjectsBoardPage } from './components/projects/projects-board-page';
 import { ThreePanePage } from './components/three-pane/three-pane-page';
@@ -83,6 +84,7 @@ export function App() {
 /** Render the selected top-level view, or a quiet placeholder while the landing view resolves. */
 function MainView({ view }: { view: AppView | null }) {
   if (view === null) return <LandingPlaceholder />;
+  if (view === 'digest') return <DigestPage />;
   if (view === 'memory') return <MemoryPage />;
   if (view === 'all-projects') return <ProjectsBoardPage />;
   if (view === 'three-pane') return <ThreePanePage />;

@@ -18,6 +18,7 @@ import type {
   AppSettings,
   CredentialKind,
   CredentialPresence,
+  DigestMetadata,
   LearningEntry,
   LinkRepoRequest,
   Lock,
@@ -41,6 +42,7 @@ import {
   AcquireLockResponseSchema,
   AppSettingsSchema,
   CredentialPresenceSchema,
+  DigestMetadataSchema,
   LearningEntryListResponseSchema,
   LearningEntrySchema,
   LockSchema,
@@ -64,6 +66,7 @@ import {
 /** Stable React Query keys (centralized so invalidation can never typo a key). */
 export const queryKeys = {
   today: ['today'] as const,
+  digest: ['digest'] as const,
   settings: ['settings'] as const,
   learning: ['learning'] as const,
   projectsBoard: ['projects-board'] as const,
@@ -129,6 +132,30 @@ async function request(path: string, init?: RequestInit): Promise<unknown> {
 /** GET the assembled Today read model (metrics + counts + ranked do-next cards). */
 export async function fetchToday(): Promise<TodayReadModel> {
   return TodayReadModelSchema.parse(await request('/today'));
+}
+
+/**
+ * The morning-digest view model (PROJECT.md §9 / D34): the body-free {@link DigestMetadata} plus the
+ * LOCALLY-synthesized narrative `prose`. The server only ever supplies the metadata; the prose is
+ * synthesized on this machine (Golden rule #3), so it is local free text, not a server contract.
+ */
+export interface DigestView {
+  readonly metadata: DigestMetadata;
+  readonly prose: string;
+}
+
+/**
+ * GET the morning digest (`{ metadata, prose }`). The METADATA is zod-parsed against the shared
+ * `DigestMetadataSchema` — the same strict, body-free guarantee the rest of this client relies on, so
+ * a smuggled body field surfaces as a loud error. `prose` is local-only synthesized narrative (empty
+ * when the backend declined synthesis under backpressure / without a runner), kept as a plain string.
+ */
+export async function fetchDigest(): Promise<DigestView> {
+  const raw = (await request('/digest')) as { metadata: unknown; prose?: unknown };
+  return {
+    metadata: DigestMetadataSchema.parse(raw.metadata),
+    prose: typeof raw.prose === 'string' ? raw.prose : '',
+  };
 }
 
 /**

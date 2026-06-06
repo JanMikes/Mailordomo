@@ -3,7 +3,13 @@
  * case throughout (CLAUDE.md). The bright semantic hues are RESERVED for the three promise directions
  * (PROJECT.md §7); task-state dots use a quieter palette so the promise colors stay the signal.
  */
-import type { PromiseDirection, StaleReason, TaskState, UrgencyLabel } from '@mailordomo/shared';
+import type {
+  PromiseDirection,
+  PromiseStatus,
+  StaleReason,
+  TaskState,
+  UrgencyLabel,
+} from '@mailordomo/shared';
 
 /** Canonical display order for the three promise directions (PROJECT.md §7: deliver → owe → chase). */
 export const PROMISE_ORDER: readonly PromiseDirection[] = [
@@ -69,6 +75,14 @@ export const PROMISE_META: Record<PromiseDirection, PromiseMeta> = {
     textClass: 'text-promise-chase',
     tintClass: 'bg-promise-chase/10',
   },
+};
+
+/** Promise-status copy (PROJECT.md §7 lifecycle: open → fulfilled | overdue | cancelled). */
+export const PROMISE_STATUS_LABEL: Record<PromiseStatus, string> = {
+  open: 'Open',
+  fulfilled: 'Fulfilled',
+  overdue: 'Overdue',
+  cancelled: 'Cancelled',
 };
 
 /** Categorical urgency copy (used in tooltips / a11y labels; the chip itself shows the date). */
