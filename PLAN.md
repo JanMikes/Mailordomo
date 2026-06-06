@@ -776,6 +776,32 @@ Lucide, **REST + WebSocket** client to the backend, React Query, light/dark, sen
     config/`.env` editing** for devs (never trap a dev), test-connection buttons, health display.
   - **Tests:** cred read/write/delete with the **fake** store (Keychain mocked); config round-trip; preset host/port
     correctness; repo-mirror **pull scheduling** (pure); wizard validation. No live `security`/IMAP/`git` in CI.
+- **D34** *(Phase 9 blueprint — orchestrator)* **Digest + daemon loop + E2E + launchd + docs — ship-ready (the
+  FINAL phase).**
+  - **Daemon loop** (`daemon/`, replacing the 18-line stub): orchestrates **poll → triage → state → promises →
+    stale → summarize → overdue-nudge**, composing the existing engines (`triageMessage` Haiku → state machine →
+    metadata; `extractPromises` Haiku → reconciler → metadata; `detectStale`; `summarizeThread` Sonnet;
+    `draftNudge` Opus **draft-only**) over the resilient IMAP connection (Phase 3). **Throttled** (essential triage
+    proceeds; deferrable summaries/digest/rank backpressured via the Phase 4 throttle). **Structurally send-proof**
+    — no `smtp/**` import (the D18/D31 guard holds); the nudge files a draft only. **Not auto-started in tests**;
+    launchd runs it. Live operation needs the Phase 8 creds (a user action) — the build + E2E use fakes.
+  - **Morning digest** (`claude/digest.ts` + new `prompts/digest.md` + `GET /api/digest`): assemble the body-free
+    `DigestMetadata` (the Phase 1 `shared/digest.ts` model — needs_you / promises_due / **handled** / drafted)
+    from the metadata service, then a **Sonnet** synthesis into prose **locally**. **Privacy (golden rule #3):**
+    "what Simona handled" is built **only** from **actor-attributed transitions** (server metadata —
+    subject/snippet/sender), never her body; my-mailbox content is synthesized locally; the payload is body-free by
+    construction. (Add a metadata-client transitions-read if missing.)
+  - **Thin E2E** (`integration/e2e.test.ts`): **poll → triage → draft → send(stub)** via the integration harness +
+    the **fake** runner + **stub** SMTP — asserts the critical loop wires end-to-end and **never really sends**
+    (golden rule #1).
+  - **launchd:** a `*.plist` + an install script to run the backend as a macOS launchd service (loopback bind),
+    documented.
+  - **Docs:** top-level **README** (install → wizard → run), **`.env.example`** completeness, the service README;
+    polish.
+  - **Polish (deferred items):** `summaryMemo` LRU cap; the dead `NavRow` disabled branch (remove); the wizard
+    `500→400` on a malformed `:account`; the account-regex `.`/`..` tightening — address the cheap, safe ones.
+  - **Golden rules:** #1 (E2E send is a stub; daemon send-proof), #3 (digest body-free; Simona-part
+    server-metadata-only), #6 (digest = Sonnet; triage/extract = Haiku; draft/nudge = Opus).
 
 ---
 
