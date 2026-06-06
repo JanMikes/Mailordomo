@@ -12,6 +12,9 @@
  *  - `projects-board` — the LOCAL all-projects/per-project board (threads grouped by task state).
  *  - `thread-detail` — the LOCAL split-work-surface read model (body-free thread + pinned summary).
  *  - `settings`   — the LOCAL app settings (stale thresholds, lock timeout, color scheme).
+ *  - `config`     — the LOCAL setup/config contracts (projects → mailboxes → repos), provider
+ *                   presets, and the wizard request/response DTOs (Phase 8). Secret-free by
+ *                   construction: a password is only ever an INBOUND request field, never stored/echoed.
  *  - `api`        — request/response contracts for the metadata service (ALL strict; the privacy
  *                   boundary lives here and in `privacy`).
  *  - `routing`    — fixed model routing + the checkable Golden-rule-#6 invariant.
@@ -31,4 +34,5 @@ export * from './today';
 export * from './projects-board';
 export * from './thread-detail';
 export * from './settings';
+export * from './config';
 export * from './api';
