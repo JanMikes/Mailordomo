@@ -38,6 +38,7 @@ import {
 import type { ConfigStore } from '../config';
 import { addMailbox, addProject, ConfigError, linkRepo, updateMailbox } from '../config';
 import type { CredentialStore } from '../credentials';
+import { isSafeAccount } from '../credentials';
 import type { GitRunner } from '../repos';
 import { mirrorClone, mirrorFetch, resolveRepoMirrorDir, validateLocalRepoPath } from '../repos';
 import type { ImapConnectionTester } from './test-connection';
@@ -330,6 +331,8 @@ export function registerWizardRoutes(app: Hono, deps: WizardDeps): void {
   /** Whether a credential is present (boolean) — NEVER the value. */
   app.get('/api/wizard/credentials/:account/:kind', async (c) => {
     const account = c.req.param('account');
+    if (!isSafeAccount(account))
+      return c.json({ error: 'invalid credential account', code: 'invalid' }, 400);
     const kindParsed = CredentialKindSchema.safeParse(c.req.param('kind'));
     if (!kindParsed.success)
       return c.json({ error: 'invalid credential kind', code: 'invalid' }, 400);
@@ -344,6 +347,8 @@ export function registerWizardRoutes(app: Hono, deps: WizardDeps): void {
 
   app.delete('/api/wizard/credentials/:account/:kind', async (c) => {
     const account = c.req.param('account');
+    if (!isSafeAccount(account))
+      return c.json({ error: 'invalid credential account', code: 'invalid' }, 400);
     const kindParsed = CredentialKindSchema.safeParse(c.req.param('kind'));
     if (!kindParsed.success)
       return c.json({ error: 'invalid credential kind', code: 'invalid' }, 400);

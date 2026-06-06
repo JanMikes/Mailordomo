@@ -37,10 +37,24 @@ export interface CredentialStore {
 }
 
 /**
+ * Whether an `account` is acceptable AT AN API BOUNDARY (the wizard's `:account` URL param). This is
+ * STRICTER than {@link assertSafeAccount}: besides the id alphabet it rejects the bare `.`/`..` names,
+ * which — while non-traversal (they resolve to the literal `....env` filename UNDER the config dir,
+ * not a parent escape; see `credentialEnvFilePath`) — are never legitimate account ids and should be a
+ * clean 400 rather than reaching the store. Pure predicate; the wizard maps a `false` to a 400.
+ */
+export function isSafeAccount(account: string): boolean {
+  if (account === '.' || account === '..') return false;
+  return /^[A-Za-z0-9._@-]+$/.test(account);
+}
+
+/**
  * Guard an `account` used to derive a Keychain service name or a `.env` filename. Rejects path
  * separators / traversal and empty values so a crafted account id can't escape the config dir or the
  * keychain namespace. Allows the id alphabet (`A–Z a–z 0–9 . _ @ -`) — covers generated ids + email
- * local parts. Throws on a bad value (callers pass generated ids, so this only trips on misuse).
+ * local parts; the bare `.`/`..` pass here (they resolve to a contained literal filename — proven safe
+ * in the credentials suite), so this guard stays focused on traversal. Throws on a bad value (callers
+ * pass generated ids, so this only trips on misuse).
  */
 export function assertSafeAccount(account: string): void {
   if (!/^[A-Za-z0-9._@-]+$/.test(account)) {
