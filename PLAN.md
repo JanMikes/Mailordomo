@@ -746,6 +746,36 @@ Lucide, **REST + WebSocket** client to the backend, React Query, light/dark, sen
     unreachable.
   - **No new project SETUP** (multi-project config / the wizard) — that is Phase 8. 7c renders what the single
     configured project exposes.
+- **D33** *(Phase 8 blueprint — orchestrator)* **Setup wizard + credentials + repo pointers — the config layer &
+  secrets handling.** **Golden rule #4 governs: secrets NEVER in git, the config JSON, the metadata service, logs,
+  or any API response.** (The `.gitignore` already excludes `*.env` keeping `.env.example`.)
+  - **Config model:** a structured **local `ConfigStore`** (JSON at `$MAILORDOMO_CONFIG_DIR/config.json`, mirroring
+    `SettingsStore`) holding **non-secret** config only — projects `{id,name}`, mailboxes
+    `{id,projectId,address,imap{host,port,secure,user},smtp{host,port,secure,user}}`, and local repo configs
+    (`LocalRepoConfig`). **No passwords/tokens in the file.**
+  - **`CredentialStore`** (golden rule #4): an injectable interface (`get/set/delete(account,kind)`) with a **macOS
+    Keychain** impl via the **`security` CLI** (`add/find/delete-generic-password`, service `mailordomo:<id>:<kind>`;
+    Keychain-first per D22/#22) and a **`{mailbox}.env` fallback** (gitignored). Secrets: IMAP/SMTP passwords, the
+    **metadata project token**, (later) a repo PAT. **Never logged, never returned by an API, never in the config
+    JSON.** A **fake in-memory impl** for tests — **CI never invokes `security`**. (Documented tradeoff: the
+    `security` CLI takes the password in argv, briefly `ps`-visible to the local user — inherent to the no-native-dep
+    choice.)
+  - **Provider presets** (pure data): iCloud (`imap.mail.me.com:993` / `smtp.mail.me.com:587`, **app-specific
+    password required**), Gmail (`imap.gmail.com:993` / `smtp.gmail.com:465`, app-password — **OAuth2 deferred**),
+    custom. Host/port/security + guidance.
+  - **Repo pointers, two modes** (D13): **local path** (`LocalRepoConfig.local_path`, validated, wired to `claude
+    --add-dir`) and **git URL + read-only mirror** (`git clone --mirror` + a **scheduled `git fetch`** with an
+    auto-pull flag; pure scheduling logic testable, the `git` spawn injected/mockable). Private-repo PAT/SSH auth
+    **documented + deferred** (v1 builds mirror+schedule).
+  - **Claude health-check:** extend `checkClaude` (resolve + `--version`), surfaced in the wizard.
+  - **Wizard API** (`api/`): config CRUD (project/mailbox/repo); **store creds via `CredentialStore`** (write-only,
+    never echoed); a **read-only `test-connection`** (IMAP login via the existing seam → ok/fail, no creds in the
+    response); the health-check. **No live daemon sync starts here** — the continuous poll→triage loop is **Phase
+    9**; Phase 8 only makes a real mailbox *configurable + testable*.
+  - **Frontend:** a guided **stepper** (project → mailbox + preset → creds → repo → Claude health → done), **raw
+    config/`.env` editing** for devs (never trap a dev), test-connection buttons, health display.
+  - **Tests:** cred read/write/delete with the **fake** store (Keychain mocked); config round-trip; preset host/port
+    correctness; repo-mirror **pull scheduling** (pure); wizard validation. No live `security`/IMAP/`git` in CI.
 
 ---
 
