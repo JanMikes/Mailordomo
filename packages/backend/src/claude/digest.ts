@@ -141,10 +141,21 @@ export function assembleDigestMetadata(
   }
   promisesDue.sort((a, b) => byIsoAsc(a.due_at, b.due_at));
 
-  // "What was handled": actor-attributed transitions in the window (defensively re-filtered), newest first.
+  // "What was handled": actor-attributed transitions in the window, newest first. Re-PROJECTED onto
+  // exactly the sanctioned fields (like the three sections above) so the section is body-free BY
+  // CONSTRUCTION here — not merely because an upstream strict-parse happened to strip extras. A
+  // pass-through (`.slice()`) of the caller's objects would otherwise carry any stray field along.
   const handled: DigestTransitionEntry[] = input.transitions
     .filter((t) => inWindow(t.at, startMs, endMs))
-    .slice()
+    .map((t) => ({
+      task_id: t.task_id,
+      thread_id: t.thread_id,
+      subject: t.subject,
+      from: t.from,
+      to: t.to,
+      actor: t.actor,
+      at: t.at,
+    }))
     .sort((a, b) => byIsoDesc(a.at, b.at));
 
   // "What Claude drafted": draft METADATA (no body) timestamped within the window, newest first.
