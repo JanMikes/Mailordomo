@@ -464,6 +464,31 @@ class SqliteRepository implements Repository {
     return rows.map(toTransition);
   }
 
+  listTransitionsInWindow(
+    projectId: string,
+    windowStart: string,
+    windowEnd: string,
+  ): DigestTransitionEntry[] {
+    // Same actor-attributed, body-free shape the digest's "handled" section uses (see
+    // getDigestMetadata) — exposed standalone so the local app's morning-digest assembler can read
+    // windowed transitions without pulling the whole digest. Newest first; bounds inclusive.
+    return this.db
+      .prepare(
+        `SELECT tt.task_id AS task_id, t.thread_id AS thread_id, th.subject AS subject,
+                tt."from" AS "from", tt."to" AS "to", tt.actor AS actor, tt.at AS at
+         FROM task_transitions tt
+           JOIN tasks t ON t.id = tt.task_id
+           JOIN threads th ON th.id = t.thread_id
+         WHERE th.project_id = ? AND tt.at >= ? AND tt.at <= ?
+         ORDER BY tt.at DESC`,
+      )
+      .all(
+        projectId,
+        normalizeIso(windowStart),
+        normalizeIso(windowEnd),
+      ) as DigestTransitionEntry[];
+  }
+
   /* promises */
   createPromise(
     projectId: string,

@@ -16,6 +16,7 @@ import type { Repository } from './repo/repository';
 import { pairingRoutes } from './routes/pairing';
 import { threadRoutes } from './routes/threads';
 import { taskRoutes } from './routes/tasks';
+import { transitionRoutes } from './routes/transitions';
 import { promiseRoutes } from './routes/promises';
 import { noteRoutes } from './routes/notes';
 import { repoRoutes } from './routes/repos';
@@ -49,6 +50,7 @@ export function createApp(deps: AppDeps): Hono<AppEnv> {
 
   app.route('/threads', threadRoutes(repo));
   app.route('/tasks', taskRoutes(repo));
+  app.route('/transitions', transitionRoutes(repo));
   app.route('/promises', promiseRoutes(repo));
   app.route('/notes', noteRoutes(repo));
   app.route('/repos', repoRoutes(repo));

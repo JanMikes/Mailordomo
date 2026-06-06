@@ -19,6 +19,7 @@ import type {
   CreateTaskTransitionRequest,
   DigestMetadata,
   DigestMetadataRequest,
+  DigestTransitionEntry,
   DraftMeta,
   LearningEntry,
   Lock,
@@ -91,6 +92,16 @@ export interface Repository {
   ): TransitionResult;
   /** `undefined` when the task is not in the project (404); otherwise the transition history. */
   listTransitions(projectId: string, taskId: string): TaskTransition[] | undefined;
+  /**
+   * Project-wide, actor-attributed task transitions within `[windowStart, windowEnd]` (inclusive),
+   * each carrying its thread's subject — the body-free "what was handled" read for the morning digest
+   * (the local app assembles the digest from this; PLAN.md D34). Newest first.
+   */
+  listTransitionsInWindow(
+    projectId: string,
+    windowStart: string,
+    windowEnd: string,
+  ): DigestTransitionEntry[];
 
   /* promises */
   createPromise(

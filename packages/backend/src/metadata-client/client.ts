@@ -43,6 +43,7 @@ import type {
   CreatePromiseRequest,
   CreateTaskRequest,
   CreateTaskTransitionRequest,
+  DigestTransitionEntry,
   DraftMeta,
   LearningEntry,
   Lock,
@@ -62,6 +63,7 @@ import type {
 import {
   AcquireLockResponseSchema,
   ApiErrorSchema,
+  DigestTransitionListResponseSchema,
   DraftMetaListResponseSchema,
   DraftMetaSchema,
   LearningEntryListResponseSchema,
@@ -196,6 +198,23 @@ export class MetadataClient {
   ): Promise<TaskTransition> {
     const res = await this.request('POST', `/tasks/${encodeURIComponent(taskId)}/transitions`, req);
     return this.parse(res, TaskTransitionSchema);
+  }
+
+  /**
+   * Read every actor-attributed task transition in `[window.start, window.end]` (project-wide,
+   * newest first), each with its thread subject — the body-free "what was handled" feed for the
+   * morning digest's "what Simona handled" section (Golden rule #3: actor attribution on server
+   * metadata, never her message body). Bounds are sent as ISO query params.
+   */
+  async listTransitionsInWindow(window: {
+    readonly start: string;
+    readonly end: string;
+  }): Promise<DigestTransitionEntry[]> {
+    const qs = `?window_start=${encodeURIComponent(window.start)}&window_end=${encodeURIComponent(
+      window.end,
+    )}`;
+    const res = await this.request('GET', `/transitions${qs}`);
+    return this.parse(res, DigestTransitionListResponseSchema);
   }
 
   /* -------------------------------- Promises -------------------------------- */

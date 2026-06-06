@@ -46,6 +46,16 @@ export const DigestTransitionEntrySchema = z.strictObject({
 });
 export type DigestTransitionEntry = z.infer<typeof DigestTransitionEntrySchema>;
 
+/**
+ * The body-free response of the windowed transitions read (`GET /transitions?window_start&window_end`):
+ * every actor-attributed task transition in a project within a window, with just enough thread context
+ * (subject) to render a digest "handled" line. This is the metadata-only transitions-read the local
+ * app's morning-digest assembler consumes for its "what Simona handled" section (PLAN.md D34) — it
+ * carries task_id/thread_id/subject/from/to/actor/at and NO body, by construction.
+ */
+export const DigestTransitionListResponseSchema = z.array(DigestTransitionEntrySchema);
+export type DigestTransitionListResponse = z.infer<typeof DigestTransitionListResponseSchema>;
+
 /** "Promises due" row: a promise with thread context, for the 3-way "due today/overdue" section. */
 export const DigestPromiseEntrySchema = z.strictObject({
   promise_id: IdSchema,
