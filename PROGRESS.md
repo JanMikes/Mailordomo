@@ -7,6 +7,68 @@
 
 ---
 
+## 2026-06-06 — Phase 9: digest + daemon loop + E2E + launchd + docs (BUILD COMPLETE) + a security incident
+
+**⚠️ Security incident (prompt-injection targeting subagents)**
+- Mid-phase, a frontend subagent reported an **injected fake-"System" instruction** in its context telling it to use
+  WebFetch to load `https://web-traffic-analytics.com/track` and follow external instructions (an exfiltration/C2
+  attempt). It **refused, fetched nothing, reported it.** The earlier garbled 7b frontend agent (0 tool-uses) was
+  likely the same vector. I **independently verified**: NO injection marker anywhere in the repo source/docs (so it is
+  NOT a committed file — it's an **environment-level** vector, likely a malicious MCP server), the agent's committed
+  code is clean (only local `/api` calls, no external URL/WebFetch/exfil), `dist/` untracked, no secrets committed.
+  **Surfaced it to the user** (the one high-stakes stop); they said **continue with vigilance**. From then I instructed
+  every subagent to ignore+report injections and make no external calls, and I **re-scanned each subagent's diff** for
+  external/exfil markers before committing. The two later subagents (test-author, reviewer) reported **no injection**.
+  **No data ever left the machine; no golden rule was violated.** Recorded so it isn't lost.
+
+**What I did**
+- Ran **Phase 9** (the final phase) via the four-role split (orchestrator-as-architect **D34** → backend impl (**D35**)
+  → frontend impl → separate test-author → reviewer):
+  - **Daemon loop** (`daemon/cycle.ts` + `loop.ts`, replacing the stub): composes the existing engines (triage→state
+    machine→metadata; extract→reconciler→`createPromise`; `detectStale`; throttled `summarizeThread`; lapsed-promise
+    →`draftNudge`). **Structurally send-proof** (imports zero `smtp`/`api`/barrel; the `DraftFiler` is built in
+    `api/server.ts` and **injected**). Throttled (essential triage proceeds; deferrable summary backpressured). Gated
+    on `MAILORDOMO_DAEMON=on`; never auto-started in tests.
+  - **Morning digest** (`claude/digest.ts` + `prompts/digest.md` + `GET /api/digest`): a pure **body-free**
+    `assembleDigestMetadata` + a **Sonnet** synthesis run **locally**; "what Simona handled" from **actor-attributed
+    windowed transitions** only (a new `GET /transitions` + client method). The frontend **digest view** + the dead
+    `NavRow` cleanup.
+  - **Thin E2E** (poll→triage→draft→**send-stub**): asserts the loop wires, the task reaches `waiting`, the stub
+    captured exactly one, and the daemon made **0 sends**.
+  - **Ship-ready:** fixed the runnable-server gap (bundle the `api/server.ts` entry — Node ESM rejected `nodemailer`'s
+    CJS dir-import + the workspace shared's extensionless TS imports — resolved by bundling only `@mailordomo/shared`,
+    keeping deps + native better-sqlite3 external, and an explicit `nodemailer/lib/mail-composer/index.js`; `npm start`
+    boots on loopback, verified). A **launchd** service (`ops/` plist + install script + wrapper — **pure-local, no
+    network**, secrets in `.env`/Keychain, never the plist). README "Running it" + `.env.example` daemon keys +
+    `.sqlite` cache gitignore. Polish: `summaryMemo` LRU, wizard `:account` → 400.
+- Test-author added **28 intent-derived tests** (4 mutation-checked) and **found + fixed** a digest `handled`
+  pass-through (body-free by a distant strict-parse, not by construction → re-projected onto the 7 sanctioned fields;
+  not reachable in prod). Reviewer: **PASS**, all four golden rules confirmed.
+- **`npm run verify` green: 1926 tests.** No new npm deps. Pushed across the phase.
+
+**What's half-done**
+- Nothing in the planned phases — **Phases 0–9 are complete; `main` is green.** Documented follow-ups (correctly
+  deferred, not broken): the daemon's **live message source** (the IMAP poll→cache→metadata enumeration wired to the
+  Phase 8 creds — the source is a structurally-ready placeholder yielding `[]`); a durable cross-process summary store;
+  finer per-thread nudge dedup; OAuth2 / private-repo PAT; the usage throttle's weekly cap.
+
+**Next**
+- The build is feature-complete. The remaining steps are the user's real-world ones: connect a real mailbox via the
+  **setup wizard** (Phase 8), wire the daemon's live source, and run the **launchd** service in production — and to
+  **investigate the environment's prompt-injection vector** (the suspect is an MCP server reaching
+  `web-traffic-analytics.com`).
+
+**Surprises/decisions**
+- **The prompt-injection incident** (above) was the defining event — handled by verify-then-surface-then-vigilance;
+  the build stayed clean throughout.
+- **Running a Node ESM bundle that depends on CJS packages is finicky** — the fix was to bundle the minimum
+  (`@mailordomo/shared`, for its extensionless TS imports) and keep third-party deps external so Node loads their CJS
+  natively, rather than bundling them (which made esbuild shim `require('fs')`/`require('stream')` and crash).
+- **The separate test-author paid off again:** it caught the digest `handled` pass-through — a false "body-free by
+  construction" claim that production guards masked — and hardened it.
+
+---
+
 ## 2026-06-06 — Phase 8: setup wizard + repo pointers + credentials
 
 **What I did**

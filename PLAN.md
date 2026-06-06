@@ -802,6 +802,38 @@ Lucide, **REST + WebSocket** client to the backend, React Query, light/dark, sen
     `500→400` on a malformed `:account`; the account-regex `.`/`..` tightening — address the cheap, safe ones.
   - **Golden rules:** #1 (E2E send is a stub; daemon send-proof), #3 (digest body-free; Simona-part
     server-metadata-only), #6 (digest = Sonnet; triage/extract = Haiku; draft/nudge = Opus).
+- **D35** *(Phase 9 backend — implementer)* **Daemon loop + morning digest + thin E2E + polish, per D34.**
+  - **Daemon = pure-ish orchestrator + seams.** `runDaemonCycle(deps)` (`daemon/cycle.ts`) processes one
+    `source.poll()` batch, composing the existing engines (triage→state machine→metadata, extract→reconciler→
+    `createPromise`, `detectStale`→auto `waiting→follow-up`, throttled `summarizeThread`, `shouldNudgeAt`→
+    `draftNudge`). `startDaemon(deps,{intervalMs})` (`daemon/loop.ts`) is a non-overlapping interval scheduler
+    that also `start()`s an injected `ResilientImapConnection` (IDLE-hot) + cold-polls. EVERYTHING injected
+    (source/runner/throttle/metadata port/**filer**/clock/ids) ⇒ fully fakeable; **not auto-started in tests**
+    (only `api/server.ts` starts it, gated `MAILORDOMO_DAEMON=on`). **§6 autonomy:** auto transitions applied,
+    `propose` left for the user; new thread → task in the triaged state (FYI ⇒ `done`). **Throttle:** every job
+    gated; essential triage/extract/nudge proceed over-throttle, deferrable summary is dropped (`deferred++`).
+  - **Golden rule #1 — daemon is structurally send-proof.** `daemon/**` imports ONLY shared/claude/engines/node
+    (grep-confirmed; the D18/D31 ESLint guard holds — lint green). The nudge files via an injected `DraftFiler`
+    (saveDraft-only, no transmit verb); the filer that wraps `smtp/saveDraft` is built in `api/server.ts` (the
+    composition root, which may import smtp) and **injected**. Behavioral proof: a hostile transmit-spy filer
+    records 0 sends; the E2E asserts the stub transport is the only send (daemon `sendCalls===0`).
+  - **Digest data path — LOCAL pure assembler over raw reads (NOT the server's `getDigestMetadata`).**
+    `assembleDigestMetadata(input,window)` (`claude/digest.ts`) is pure + body-free, mirroring `assembleTodayView`;
+    the endpoint feeds it `listTasks/listThreads/listPromises/listDraftMeta` + a NEW windowed transitions read.
+    The `handled` (Simona) section needs project-wide actor-attributed transitions, which the client lacked, so I
+    **ADDED** `GET /transitions?window_start&window_end` (server route + `repo.listTransitionsInWindow`, reusing
+    the existing `getDigestMetadata` `handled` SQL) + `MetadataClient.listTransitionsInWindow`. `needs_you` mirrors
+    the server's `needs-reply`/`follow-up` selection (kept consistent to avoid drift; cross-referenced in code).
+    `GET /api/digest` returns `{metadata, prose}`; Sonnet synthesis is local + throttle-gated (prose `''` under
+    backpressure/no runner; metadata always returned). `digest` was already routed Sonnet/deferrable — no routing
+    change. Privacy: handled = transitions-only; a capturing-fetch test confirms no body crosses during assembly.
+  - **Polish:** `summaryMemo` is now a bounded LRU (cap 100); the wizard `:account` GET/DELETE return **400** (not
+    500) via a new strict `isSafeAccount` predicate. **Judgment call:** the `.`/`..` tightening is applied ONLY at
+    the wizard API boundary (`isSafeAccount`); `assertSafeAccount`/`credentialEnvFilePath` are LEFT accepting
+    `.`/`..` (they resolve to a contained literal `...env` — the Phase 8 review's recorded safe behavior, enshrined
+    by an existing credentials test). The dead `NavRow` branch is a FRONTEND item (left for the frontend implementer).
+  - **`npm run verify` GREEN** (1898 tests: backend 772, frontend 71, server 211, shared 844). New backend tests:
+    daemon cycle smoke (7), digest smoke (9), digest-endpoint integration smoke (3), the thin E2E (1). No new npm deps.
 
 ---
 
@@ -824,7 +856,7 @@ reviewer before moving on.)*
 - [x] **Phase 7b** — split work surface + refine chat ✅
 - [x] **Phase 7c** — 3-pane fallback + project views ✅
 - [x] **Phase 8** — setup wizard + repo pointers + credentials ✅
-- [ ] **Phase 9** — digest + E2E + polish + launchd + docs
+- [x] **Phase 9** — digest + E2E + polish + launchd + docs ✅
 
 > Per-session notes live in `PROGRESS.md` (§4.7); per-phase reviewer notes are appended here.
 
@@ -1174,6 +1206,30 @@ localStorage/URL/query-key). **test-connection is structurally read-only** (the 
 PAT/SSH (#27, the `repo-pat` slot exists, unwired); metadata-service repo-identity push (no server repo endpoint
 yet); Keychain `security` not injectable (pure `buildSecurityArgs` tested instead; CI never spawns `security`);
 **no daemon sync loop started** (Phase 9 wires the configured creds into live sync + the E2E).
+
+### Phase 9 review (independent reviewer, fresh context) — digest + daemon + E2E + launchd + docs
+
+**Verdict:** PASS. **`npm run verify` green; 1926 tests.** All Phase 9 DoD items met; built via the
+orchestrator-as-architect (D34/D35) → backend impl → frontend impl → separate test-author → reviewer split.
+
+**All four golden rules confirmed (evidence):** **#1** — the daemon imports **zero** `smtp/**`/`api/**`/root-barrel;
+the `DraftFiler` seam has **no transmit verb**; the smtp-wrapping filer is built in `api/server.ts` and **injected**;
+two independent E2E tests assert the daemon's `sendCalls===0` and the stub transport captures **exactly one** send
+(manual only); the structural sendguard (9 cases) still trips. **#3** — the digest `handled` is built ONLY from
+actor-attributed **windowed transitions** (`GET /transitions`), **re-projected** onto the 7 sanctioned fields (not a
+passthrough — the test-author's hardening); the rendered prompt cannot carry a body; capturing-fetch tests confirm no
+body-ful key crosses outbound during assembly; my-content is synthesized **locally**. **#4** — the committed plist
+carries only `__REPO__`/`__HOME__`/`__NODE_DIR__` placeholders; secrets are sourced at runtime from the gitignored
+`.env`/Keychain; `install-launchd.sh` makes **no network call**. **#6** — digest=Sonnet, triage/extract=Haiku,
+nudge=Opus; the throttle intent test proves the deferrable summary backpressures while essential triage/nudge proceed
+on a genuinely saturated window.
+
+**No must-fix findings.** The build-runnable-server fix (bundle only `@mailordomo/shared`, keep deps + the native
+better-sqlite3 external, explicit nodemailer `/index.js`) is sound; the launchd scripts are pure-local + secret-free.
+**Deferrals correctly scoped:** the daemon **source is a placeholder** until the Phase 8 creds feed a live IMAP poll →
+cache → metadata enumeration (D35); a durable cross-process summary store; coarse per-thread nudge dedup;
+OAuth2/private-repo PAT; the throttle's weekly cap (D24). (The dead `NavRow` branch **was** removed in the digest-view
+commit.)
 
 ---
 
