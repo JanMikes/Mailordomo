@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Mailordomo backend LaunchAgent (per-user). Runs the bundled backend on loopback (the API + WebSocket)
+  plus the background daemon. __REPO__/__HOME__/__NODE_DIR__ are filled in by ops/install-launchd.sh —
+  do NOT hand-edit machine paths into this committed template. Config + secrets are read by the wrapper
+  from the gitignored .env / the macOS Keychain (golden rule #4); none live in this file.
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.mailordomo.backend</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>__REPO__/ops/run-backend.sh</string>
+  </array>
+
+  <key>WorkingDirectory</key>
+  <string>__REPO__</string>
+
+  <!-- node is found via PATH (the wrapper `exec node ...`); __NODE_DIR__ is this machine's node dir. -->
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>__NODE_DIR__:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+  </dict>
+
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+
+  <key>StandardOutPath</key>
+  <string>__HOME__/.mailordomo/logs/backend.out.log</string>
+  <key>StandardErrorPath</key>
+  <string>__HOME__/.mailordomo/logs/backend.err.log</string>
+</dict>
+</plist>

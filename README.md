@@ -54,10 +54,41 @@ npm run verify     # typecheck + lint + test + build — the single quality gate
 `npm run verify` is the definition of "buildable." The git hooks run the same checks: a fast
 **pre-commit** (typecheck + lint-staged + affected tests) and a full **pre-push** (`npm run verify`).
 
+## Running it
+
+Mailordomo is three processes: the **metadata service** (shared, Dockerized), the **local backend**
+(loopback API + the background daemon), and the **frontend** (the UI).
+
+1. **Metadata service** (Layer 2) — build + run the Docker image; see
+   [`packages/server/README.md`](./packages/server/README.md) for the build/run command and its env
+   (project token, volume). It listens on `:8787`.
+2. **Configure** — either copy [`.env.example`](./.env.example) → `.env` (gitignored) and fill in the
+   metadata + mailbox settings, **or** use the in-app **setup wizard** (the "Setup" view: project →
+   mailbox + provider preset → repo → Claude health). Credentials go to the **macOS Keychain**
+   (preferred) or a per-mailbox `{mailbox}.env` — **never committed** (golden rule #4).
+3. **Backend + frontend** (dev):
+   ```bash
+   npm run build                                   # build the backend server bundle + the frontend
+   npm start                                       # backend API on http://127.0.0.1:4317 (daemon OFF by default)
+   npm run dev --workspace=@mailordomo/frontend    # the UI (Vite), proxying /api to the backend
+   # optional: npm run seed:today                  # populate the metadata service with demo data to explore the UI
+   ```
+4. **Install as a background service** (macOS launchd) — runs the backend + daemon continuously:
+   ```bash
+   npm run build
+   bash ops/install-launchd.sh   # renders + bootstraps ~/Library/LaunchAgents/com.mailordomo.backend.plist
+   ```
+   The service sets `MAILORDOMO_DAEMON=on`, so the daemon continuously polls → triages → tracks
+   promises → summarizes → drafts the sanctioned overdue-nudge. **It never sends** — every send is a
+   manual click in the work surface. Logs: `~/.mailordomo/logs/backend.{out,err}.log`; stop with
+   `launchctl bootout gui/$(id -u)/com.mailordomo.backend`.
+
 ## Status
 
-Under active construction per [`PLAN.md`](./PLAN.md). See [`PROGRESS.md`](./PROGRESS.md) for the
-latest session journal.
+Feature-complete through the planned phases (scaffold → shared contracts → metadata service →
+transport/cache/engines → Claude job runner → integration → 3-way promises/ranking → tone memory →
+frontend → setup wizard → digest/daemon/E2E). See [`PLAN.md`](./PLAN.md) §10 for the phase log and
+[`PROGRESS.md`](./PROGRESS.md) for the per-session journal.
 
 ## License
 
