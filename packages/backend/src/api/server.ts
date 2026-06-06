@@ -11,24 +11,30 @@
  * reports the metadataService layer red — which is exactly the diagnostic this endpoint exists for.
  */
 import type { Server } from 'node:http';
+import { join } from 'node:path';
 import { serve } from '@hono/node-server';
-import type { WsMessage } from '@mailordomo/shared';
+import type { MailboxConfig, WsMessage } from '@mailordomo/shared';
 import { MessageCache } from '../cache';
 import { RealClaudeRunner, UsageThrottle, throttleConfigFromEnv } from '../claude';
 import type { NudgeDraft, NudgeFiledResult } from '../claude';
 import { startDaemon } from '../daemon';
-import type { DaemonCycleDeps, DaemonMessage, DaemonSource, DraftFiler } from '../daemon';
+import type { DraftFiler } from '../daemon';
 import { createFileConfigStore, resolveConfigFilePath } from '../config';
 import { resolveCredentialStore } from '../credentials';
+import type { CredentialStore } from '../credentials';
 import { createFileDraftStore, resolveDraftsDbPath } from '../drafts';
+import { ResilientImapConnection } from '../imap/connection';
+import { createImapFlowClient } from '../imap/imapflow-client';
+import type { ImapClient } from '../imap/types';
 import { LearningLog, resolveLearningDir } from '../learning';
 import { MetadataClient } from '../metadata-client';
 import { createGitRunner } from '../repos';
-import { createFileSettingsStore, resolveSettingsFilePath } from '../settings';
+import { createFileSettingsStore, resolveConfigDir, resolveSettingsFilePath } from '../settings';
 import { createNodemailerComposer } from '../smtp/nodemailer';
 import { saveDraft } from '../smtp/send';
 import type { SendDeps } from '../smtp/send';
 import { createStubMailTransport } from '../smtp/stub-transport';
+import { createCacheDaemonSource } from '../source';
 import { ToneStore, resolveToneDir } from '../tone';
 import { createBackendApi } from './app';
 import { createImapConnectionTester } from './test-connection';
@@ -42,7 +48,7 @@ interface BackendEnv {
   readonly projectId: string;
   readonly token: string;
   readonly cacheDbPath: string;
-  readonly cacheBlobDir: string | undefined;
+  readonly cacheBlobDir: string;
   readonly settingsFilePath: string;
   readonly actor: string | undefined;
 }
@@ -50,15 +56,20 @@ interface BackendEnv {
 function readEnv(env: NodeJS.ProcessEnv = process.env): BackendEnv {
   const portRaw = env['BACKEND_PORT'];
   const port = portRaw ? Number.parseInt(portRaw, 10) : 4317;
+  const configDir = resolveConfigDir(env);
   return {
     host: env['BACKEND_HOST'] ?? '127.0.0.1',
     port: Number.isFinite(port) ? port : 4317,
-    metadataBaseUrl: env['METADATA_BASE_URL'] ?? 'http://127.0.0.1:8787',
+    // Accept the env names the README / `.env.example` document (METADATA_SERVICE_URL /
+    // METADATA_PROJECT_TOKEN), falling back to the older METADATA_BASE_URL / METADATA_TOKEN aliases.
+    metadataBaseUrl:
+      env['METADATA_SERVICE_URL'] ?? env['METADATA_BASE_URL'] ?? 'http://127.0.0.1:8787',
     projectId: env['METADATA_PROJECT_ID'] ?? '',
-    token: env['METADATA_TOKEN'] ?? '',
-    // A disposable cache; defaults to a local file so a standalone run shows real folders/threads.
-    cacheDbPath: env['CACHE_DB_PATH'] ?? '.mailordomo-cache.sqlite',
-    cacheBlobDir: env['CACHE_BLOB_DIR'],
+    token: env['METADATA_PROJECT_TOKEN'] ?? env['METADATA_TOKEN'] ?? '',
+    // The disposable cache (DB + raw `.eml` blobs) defaults UNDER the config dir so it is co-located,
+    // machine-local, and clearly rebuildable. The blob dir is REQUIRED for the daemon to read bodies.
+    cacheDbPath: env['CACHE_DB_PATH'] ?? join(configDir, 'cache.sqlite'),
+    cacheBlobDir: env['CACHE_BLOB_DIR'] ?? join(configDir, 'cache-blobs'),
     // Local settings file: $MAILORDOMO_CONFIG_DIR/settings.json (default ~/.mailordomo/).
     settingsFilePath: resolveSettingsFilePath(env),
     // Actor attributed to inline task transitions (the local user); createBackendApi defaults it.
@@ -135,14 +146,24 @@ function main(): void {
   });
   ws.server = createTodayWsServer({ server: server as unknown as Server });
 
-  // BACKGROUND DAEMON (Phase 9 / D34) — composed HERE, the composition root, so the sanctioned
+  // BACKGROUND DAEMON (Phase 9 / D34, D35) — composed HERE, the composition root, so the sanctioned
   // overdue-nudge `DraftFiler` can wrap `smtp/saveDraft` (this api layer may import smtp; the daemon
   // is lint-barred and receives the filer INJECTED — it has no path to a transport). Started ONLY when
   // `MAILORDOMO_DAEMON=on` (launchd sets it); never auto-started in a dev run or in tests (which
-  // import `createBackendApi`, not this entry). Live polling needs the Phase 8 creds wired into a
-  // message source — until then the source yields nothing, so an enabled daemon is a harmless no-op.
+  // import `createBackendApi`, not this entry). The LIVE source (D35) drives a real IMAP poll → cache →
+  // enumeration once a mailbox is configured (the setup wizard) with an IMAP password in the
+  // CredentialStore — until then the daemon stays idle (logged), waiting on configuration + a restart.
   if ((process.env['MAILORDOMO_DAEMON'] ?? '').toLowerCase() === 'on') {
-    maybeStartDaemon({ metadata, runner, throttle, sendDeps, env });
+    void maybeStartDaemon({
+      metadata,
+      runner,
+      throttle,
+      sendDeps,
+      env,
+      cache,
+      configStore,
+      credentialStore,
+    }).catch((error: unknown) => console.error('[daemon] failed to start', error));
   }
 }
 
@@ -163,37 +184,105 @@ function createNudgeDraftFiler(sendDeps: SendDeps, from: string): DraftFiler {
   };
 }
 
+/** Parse a positive-int env var, or `undefined` when unset/invalid (so a default applies). */
+function readPositiveInt(raw: string | undefined): number | undefined {
+  if (raw === undefined) return undefined;
+  const value = Number.parseInt(raw, 10);
+  return Number.isFinite(value) && value > 0 ? value : undefined;
+}
+
 /**
- * Compose + start the background daemon. The message source is a placeholder until the Phase 8 creds
- * feed a live IMAP poll → cache → metadata-thread enumeration; an enabled daemon with the empty source
- * simply does nothing each cycle. `launchd` runs the process; `MAILORDOMO_DAEMON=on` enables this path.
+ * Compose + start the background daemon with its LIVE message source (D35): one resilient IMAP
+ * connection for the configured mailbox feeds `MailboxSync` → cache → enumeration → the daemon cycle.
+ *
+ * The daemon goes live ONLY when fully configured: a mailbox in the local config (set by the setup
+ * wizard) AND its IMAP password in the CredentialStore AND metadata project creds. Missing any of
+ * these, it logs WHY and stays idle (no connection opened) — connect a mailbox and restart the
+ * service to make it live. `launchd` runs the process; `MAILORDOMO_DAEMON=on` enables this path. The
+ * daemon NEVER sends — the nudge filer is saveDraft-only and the daemon has no transport reference.
  */
-function maybeStartDaemon(deps: {
+async function maybeStartDaemon(deps: {
   metadata: MetadataClient;
   runner: RealClaudeRunner;
   throttle: UsageThrottle;
   sendDeps: SendDeps;
   env: BackendEnv;
-}): void {
-  const fromAddress = process.env['MAILORDOMO_NUDGE_FROM'] ?? deps.metadata.getProjectId();
-  const filer = createNudgeDraftFiler(deps.sendDeps, fromAddress);
-  // Live cache-enumeration source lands with the Phase 8 credentials + sync wiring; until then there
-  // is no connected mailbox, so polling yields nothing (the daemon is structurally ready, idle).
-  const source: DaemonSource = { poll: (): Promise<DaemonMessage[]> => Promise.resolve([]) };
-  const daemonDeps: DaemonCycleDeps = {
-    source,
-    runner: deps.runner,
-    throttle: deps.throttle,
-    metadata: deps.metadata,
-    filer,
-  };
-  const intervalRaw = process.env['MAILORDOMO_DAEMON_INTERVAL_MS'];
-  const intervalMs = intervalRaw ? Number.parseInt(intervalRaw, 10) : 5 * 60 * 1000;
-  startDaemon(daemonDeps, {
-    intervalMs: Number.isFinite(intervalMs) && intervalMs > 0 ? intervalMs : 5 * 60 * 1000,
-    onCycle: (result) => console.log('[daemon] cycle complete', result),
-    onError: (error) => console.error('[daemon] cycle error', error),
+  cache: MessageCache;
+  configStore: ReturnType<typeof createFileConfigStore>;
+  credentialStore: CredentialStore;
+}): Promise<void> {
+  const { metadata, runner, throttle, sendDeps, env, cache, configStore, credentialStore } = deps;
+  const fromAddress = process.env['MAILORDOMO_NUDGE_FROM'] ?? metadata.getProjectId();
+  const filer = createNudgeDraftFiler(sendDeps, fromAddress);
+
+  // Resolve the single configured mailbox (single-mailbox v1, D32) + the metadata creds.
+  const mailbox: MailboxConfig | undefined = configStore.read().mailboxes[0];
+  if (mailbox === undefined || env.projectId === '' || env.token === '') {
+    console.warn(
+      '[daemon] enabled but not fully configured — need a mailbox (run the setup wizard) and ' +
+        'METADATA_PROJECT_ID + METADATA_PROJECT_TOKEN. Staying idle until configured + restarted.',
+    );
+    return;
+  }
+
+  // The IMAP password is the ONLY secret read here — straight from the CredentialStore, never logged.
+  const imapPassword = await credentialStore.get(mailbox.id, 'imap');
+  if (imapPassword === undefined) {
+    console.warn(
+      `[daemon] no IMAP password stored for mailbox ${mailbox.id} (${mailbox.address}) — run the ` +
+        'setup wizard to store credentials, then restart. Staying idle.',
+    );
+    return;
+  }
+
+  // ONE resilient IMAP connection for the watched mailbox (Phase 3): own reconnect/backoff; IDLE keeps
+  // it warm so a server `'exists'` push runs a cycle promptly. The source reads the CURRENT client.
+  const trigger = { fire: (): void => {} };
+  const connection = new ResilientImapConnection({
+    clientFactory: (): ImapClient =>
+      createImapFlowClient({
+        host: mailbox.imap.host,
+        port: mailbox.imap.port,
+        secure: mailbox.imap.secure,
+        auth: { user: mailbox.imap.user, pass: imapPassword },
+      }),
+    onReady: (client) => {
+      // New-mail push → run a cycle now (IDLE-hot). Also kick one cycle on (re)connect so the recent
+      // backlog is triaged immediately rather than waiting for the first cold interval.
+      client.onExists(() => trigger.fire());
+      trigger.fire();
+    },
+    logger: (message, meta) => console.log(`[daemon imap] ${message}`, meta ?? ''),
   });
+
+  const source = createCacheDaemonSource({
+    connection,
+    cache,
+    metadata,
+    mailbox: { address: mailbox.address },
+    folders: [{ path: 'INBOX' }],
+    projectId: metadata.getProjectId(),
+    ...(readPositiveInt(process.env['MAILORDOMO_DAEMON_INITIAL_BACKLOG']) !== undefined
+      ? { initialBacklog: readPositiveInt(process.env['MAILORDOMO_DAEMON_INITIAL_BACKLOG']) }
+      : {}),
+  });
+
+  const intervalMs = readPositiveInt(process.env['MAILORDOMO_DAEMON_INTERVAL_MS']) ?? 5 * 60 * 1000;
+  const handle = startDaemon(
+    { source, runner, throttle, metadata, filer },
+    {
+      intervalMs,
+      immediate: false, // `onReady` fires the first cycle once the connection is up
+      connection,
+      onCycle: (result) => console.log('[daemon] cycle complete', result),
+      onError: (error) => console.error('[daemon] cycle error', error),
+    },
+  );
+  trigger.fire = handle.runCycleNow;
+  console.log(
+    `[daemon] live: watching ${mailbox.address} INBOX via ${mailbox.imap.host} ` +
+      `(cold poll ${intervalMs}ms, IDLE-hot on new mail).`,
+  );
 }
 
 main();
